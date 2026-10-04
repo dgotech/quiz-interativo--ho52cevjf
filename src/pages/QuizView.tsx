@@ -25,7 +25,9 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
+  Edit3,
 } from 'lucide-react'
+import { QuizQuestionsEditor } from '@/components/QuizQuestionsEditor'
 
 export default function QuizView() {
   const { id } = useParams<{ id: string }>()
@@ -36,6 +38,9 @@ export default function QuizView() {
   const [tentativas, setTentativas] = useState<TentativaRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Aba ativa: 'overview' | 'questions'
+  const [activeTab, setActiveTab] = useState<'overview' | 'questions'>('overview')
 
   // Modal para ver conteúdo original extraído
   const [showOriginalModal, setShowOriginalModal] = useState(false)
@@ -116,7 +121,7 @@ export default function QuizView() {
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-16">
       {/* Botão Voltar */}
-      <div>
+      <div className="flex items-center justify-between">
         <Link
           to="/quizzes"
           className="inline-flex items-center text-xs font-semibold text-[#5A6172] hover:text-[#1A1D2E] transition-colors"
@@ -124,6 +129,35 @@ export default function QuizView() {
           <ArrowLeft className="w-4 h-4 mr-1.5" />
           Voltar para Meus Quizzes
         </Link>
+
+        {/* Abas de Navegação */}
+        <div className="flex items-center bg-[#ECEFF6] p-1 rounded-2xl gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('overview')}
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'overview'
+                ? 'bg-white text-[#1A1D2E] shadow-sm'
+                : 'text-[#5A6172] hover:text-[#1A1D2E]'
+            }`}
+          >
+            Visão Geral & Tentativas
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('questions')}
+            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'questions'
+                ? 'bg-white text-[#6C4DF6] shadow-sm'
+                : 'text-[#5A6172] hover:text-[#1A1D2E]'
+            }`}
+          >
+            <span>Revisar & Editar Perguntas</span>
+            <span className="w-5 h-5 rounded-full bg-[#6C4DF6]/10 text-[#6C4DF6] text-[10px] flex items-center justify-center font-bold">
+              {perguntas.length}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Cabeçalho do Quiz */}
@@ -169,208 +203,226 @@ export default function QuizView() {
           </div>
         </div>
 
-        {/* Botão Responder Primário Grande */}
-        <div className="shrink-0 flex sm:flex-col items-center gap-3">
+        {/* Botões Primários */}
+        <div className="shrink-0 flex sm:flex-col items-stretch sm:items-end gap-2.5">
           <Button
             onClick={() => navigate(`/quiz/${quiz.id}/play`)}
             size="lg"
-            className="w-full sm:w-auto h-12 px-8 rounded-2xl font-bold text-white bg-gradient-to-r from-[#6C4DF6] via-[#8E6FFF] to-[#00C4A7] hover:opacity-95 shadow-lg shadow-[#6C4DF6]/25 transition-all transform hover:-translate-y-0.5"
+            className="w-full sm:w-auto h-12 px-7 rounded-2xl font-bold text-white bg-gradient-to-r from-[#6C4DF6] via-[#8E6FFF] to-[#00C4A7] hover:opacity-95 shadow-lg shadow-[#6C4DF6]/25 transition-all transform hover:-translate-y-0.5"
           >
             <Play className="w-5 h-5 mr-2 fill-current" />
             {hasCompleted ? 'Responder novamente' : 'Responder quiz'}
           </Button>
-        </div>
-      </div>
-
-      {/* Seção Material de Estudo */}
-      <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-[#6C4DF6] flex items-center justify-center">
-              <BookOpen className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-base text-[#1A1D2E]">Material de Estudo</h3>
-              <p className="text-xs text-[#5A6172]">
-                Conteúdo estruturado e interpretado a partir do seu arquivo
-              </p>
-            </div>
-          </div>
 
           <Button
-            onClick={() => setShowOriginalModal(true)}
+            onClick={() => setActiveTab(activeTab === 'questions' ? 'overview' : 'questions')}
             variant="outline"
-            className="rounded-xl border-[#6C4DF6] text-[#6C4DF6] hover:bg-[#6C4DF6]/10 font-semibold text-xs h-9"
+            size="sm"
+            className="rounded-xl border-[#E5E8F0] font-semibold text-xs h-9"
           >
-            Visualizar arquivo original
+            <Edit3 className="w-4 h-4 mr-1.5 text-[#6C4DF6]" />
+            {activeTab === 'questions' ? 'Ver estatísticas' : 'Revisar & editar perguntas'}
           </Button>
         </div>
-
-        <div className="p-4 rounded-2xl bg-[#F7F8FC] border border-[#E5E8F0] text-xs text-[#5A6172] flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-[#00C4A7] shrink-0" />
-          <span>
-            <strong>Dica de aprendizagem:</strong> Use o material para revisar os pontos-chave antes
-            de responder ou repetir o quiz!
-          </span>
-        </div>
       </div>
 
-      {/* Histórico de Tentativas Anteriores */}
-      <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-extrabold text-lg text-[#1A1D2E]">Tentativas Anteriores</h3>
-            <p className="text-xs text-[#5A6172]">
-              {tentativas.length > 0
-                ? `Você já completou este quiz ${tentativas.length} ${tentativas.length === 1 ? 'vez' : 'vezes'}.`
-                : 'Você ainda não respondeu este quiz. Clique no botão acima para iniciar!'}
-            </p>
-          </div>
-
-          {hasCompleted && (
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-xs font-bold text-amber-800">
-              <Award className="w-4 h-4 text-amber-500" />
-              Melhor: {bestScore}%
-            </div>
-          )}
-        </div>
-
-        {tentativas.length === 0 ? (
-          <div className="py-10 text-center rounded-2xl bg-[#F7F8FC] border border-dashed border-[#D1D5DB]">
-            <Play className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
-            <p className="text-sm font-semibold text-[#1A1D2E]">Nenhuma tentativa registrada</p>
-            <p className="text-xs text-[#5A6172] mt-1">
-              Teste seus conhecimentos agora e veja sua pontuação detalhada aqui.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {tentativas.map((tent, index) => {
-              const tentativaNumero = tentativas.length - index
-              const isExpanded = expandedTentativaId === tent.id
-              const score = tent.pontuacao || 0
-
-              return (
-                <div
-                  key={tent.id}
-                  className="rounded-2xl border border-[#E5E8F0] bg-[#FDFDFF] overflow-hidden transition-all"
-                >
-                  <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-10 h-10 rounded-xl font-extrabold text-sm flex items-center justify-center ${
-                          score >= 70
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : score >= 50
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-red-100 text-red-700'
-                        }`}
-                      >
-                        {score}%
-                      </div>
-
-                      <div>
-                        <h4 className="text-sm font-bold text-[#1A1D2E]">
-                          Tentativa #{tentativaNumero}
-                        </h4>
-                        <p className="text-xs text-[#5A6172]">{formatarData(tent.created)}</p>
-                      </div>
-                    </div>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setExpandedTentativaId(isExpanded ? null : tent.id)}
-                      className="text-xs font-semibold text-[#6C4DF6] hover:bg-[#6C4DF6]/10 self-end sm:self-center"
-                    >
-                      {isExpanded ? (
-                        <>
-                          Ocultar detalhes <ChevronUp className="w-4 h-4 ml-1" />
-                        </>
-                      ) : (
-                        <>
-                          Ver detalhes <ChevronDown className="w-4 h-4 ml-1" />
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  {/* Detalhes expandidos: perguntas erradas e corretas */}
-                  {isExpanded && (
-                    <div className="px-5 pb-5 pt-2 border-t border-[#E5E8F0] bg-white space-y-4 animate-fade-in">
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-[#5A6172]">
-                        Respostas dadas nesta tentativa:
-                      </h5>
-
-                      <div className="space-y-3">
-                        {perguntas.map((p, pIndex) => {
-                          const respEnviada = (tent.respostas || []).find(
-                            (r) => r.pergunta_id === p.id,
-                          )
-                          const isObj = p.tipo === 'multipla_escolha'
-                          const acertou = isObj && respEnviada?.resposta_dada === p.resposta_correta
-
-                          return (
-                            <div
-                              key={p.id}
-                              className={`p-3.5 rounded-xl border text-xs ${
-                                !isObj
-                                  ? 'border-slate-200 bg-slate-50'
-                                  : acertou
-                                    ? 'border-emerald-200 bg-emerald-50/50'
-                                    : 'border-red-200 bg-red-50/50'
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="font-semibold text-[#1A1D2E] text-xs">
-                                  {pIndex + 1}. {p.enunciado}
-                                </p>
-                                {isObj && (
-                                  <span
-                                    className={`px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0 ${
-                                      acertou
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'bg-red-100 text-red-700'
-                                    }`}
-                                  >
-                                    {acertou ? 'Correto' : 'Incorreto'}
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="mt-2 space-y-1 text-[#5A6172]">
-                                <p>
-                                  <strong>Sua resposta:</strong>{' '}
-                                  <span className="font-medium text-[#1A1D2E]">
-                                    {respEnviada?.resposta_dada || '(Não respondeu)'}
-                                  </span>
-                                </p>
-                                {isObj && (
-                                  <p>
-                                    <strong>Gabarito correto:</strong>{' '}
-                                    <span className="font-medium text-emerald-700">
-                                      Opção {p.resposta_correta}
-                                    </span>
-                                  </p>
-                                )}
-                                {p.explicacao && (
-                                  <p className="mt-1 pt-1 border-t border-slate-200/60 text-slate-600 italic">
-                                    💡 <strong>Explicação:</strong> {p.explicacao}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
+      {/* RENDERIZAÇÃO CONDICIONAL BASEADA NA ABA ATIVA */}
+      {activeTab === 'questions' ? (
+        <QuizQuestionsEditor quizId={quiz.id} perguntas={perguntas} onRefresh={loadData} />
+      ) : (
+        <>
+          {/* Seção Material de Estudo */}
+          <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-50 text-[#6C4DF6] flex items-center justify-center">
+                  <BookOpen className="w-5 h-5" />
                 </div>
-              )
-            })}
+                <div>
+                  <h3 className="font-extrabold text-base text-[#1A1D2E]">Material de Estudo</h3>
+                  <p className="text-xs text-[#5A6172]">
+                    Conteúdo estruturado e interpretado a partir do seu arquivo
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setShowOriginalModal(true)}
+                variant="outline"
+                className="rounded-xl border-[#6C4DF6] text-[#6C4DF6] hover:bg-[#6C4DF6]/10 font-semibold text-xs h-9"
+              >
+                Visualizar arquivo original
+              </Button>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#F7F8FC] border border-[#E5E8F0] text-xs text-[#5A6172] flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#00C4A7] shrink-0" />
+              <span>
+                <strong>Dica de aprendizagem:</strong> Use o material para revisar os pontos-chave
+                antes de responder ou repetir o quiz!
+              </span>
+            </div>
           </div>
-        )}
-      </div>
+
+          {/* Histórico de Tentativas Anteriores */}
+          <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-lg text-[#1A1D2E]">Tentativas Anteriores</h3>
+                <p className="text-xs text-[#5A6172]">
+                  {tentativas.length > 0
+                    ? `Você já completou este quiz ${tentativas.length} ${tentativas.length === 1 ? 'vez' : 'vezes'}.`
+                    : 'Você ainda não respondeu este quiz. Clique no botão acima para iniciar!'}
+                </p>
+              </div>
+
+              {hasCompleted && (
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-xs font-bold text-amber-800">
+                  <Award className="w-4 h-4 text-amber-500" />
+                  Melhor: {bestScore}%
+                </div>
+              )}
+            </div>
+
+            {tentativas.length === 0 ? (
+              <div className="py-10 text-center rounded-2xl bg-[#F7F8FC] border border-dashed border-[#D1D5DB]">
+                <Play className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-50" />
+                <p className="text-sm font-semibold text-[#1A1D2E]">Nenhuma tentativa registrada</p>
+                <p className="text-xs text-[#5A6172] mt-1">
+                  Teste seus conhecimentos agora e veja sua pontuação detalhada aqui.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {tentativas.map((tent, index) => {
+                  const tentativaNumero = tentativas.length - index
+                  const isExpanded = expandedTentativaId === tent.id
+                  const score = tent.pontuacao || 0
+
+                  return (
+                    <div
+                      key={tent.id}
+                      className="rounded-2xl border border-[#E5E8F0] bg-[#FDFDFF] overflow-hidden transition-all"
+                    >
+                      <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`w-10 h-10 rounded-xl font-extrabold text-sm flex items-center justify-center ${
+                              score >= 70
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : score >= 50
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-red-100 text-red-700'
+                            }`}
+                          >
+                            {score}%
+                          </div>
+
+                          <div>
+                            <h4 className="text-sm font-bold text-[#1A1D2E]">
+                              Tentativa #{tentativaNumero}
+                            </h4>
+                            <p className="text-xs text-[#5A6172]">{formatarData(tent.created)}</p>
+                          </div>
+                        </div>
+
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setExpandedTentativaId(isExpanded ? null : tent.id)}
+                          className="text-xs font-semibold text-[#6C4DF6] hover:bg-[#6C4DF6]/10 self-end sm:self-center"
+                        >
+                          {isExpanded ? (
+                            <>
+                              Ocultar detalhes <ChevronUp className="w-4 h-4 ml-1" />
+                            </>
+                          ) : (
+                            <>
+                              Ver detalhes <ChevronDown className="w-4 h-4 ml-1" />
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Detalhes expandidos: perguntas erradas e corretas */}
+                      {isExpanded && (
+                        <div className="px-5 pb-5 pt-2 border-t border-[#E5E8F0] bg-white space-y-4 animate-fade-in">
+                          <h5 className="text-xs font-bold uppercase tracking-wider text-[#5A6172]">
+                            Respostas dadas nesta tentativa:
+                          </h5>
+
+                          <div className="space-y-3">
+                            {perguntas.map((p, pIndex) => {
+                              const respEnviada = (tent.respostas || []).find(
+                                (r) => r.pergunta_id === p.id,
+                              )
+                              const isObj = p.tipo === 'multipla_escolha'
+                              const acertou =
+                                isObj && respEnviada?.resposta_dada === p.resposta_correta
+
+                              return (
+                                <div
+                                  key={p.id}
+                                  className={`p-3.5 rounded-xl border text-xs ${
+                                    !isObj
+                                      ? 'border-slate-200 bg-slate-50'
+                                      : acertou
+                                        ? 'border-emerald-200 bg-emerald-50/50'
+                                        : 'border-red-200 bg-red-50/50'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <p className="font-semibold text-[#1A1D2E] text-xs">
+                                      {pIndex + 1}. {p.enunciado}
+                                    </p>
+                                    {isObj && (
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] shrink-0 ${
+                                          acertou
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : 'bg-red-100 text-red-700'
+                                        }`}
+                                      >
+                                        {acertou ? 'Correto' : 'Incorreto'}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-2 space-y-1 text-[#5A6172]">
+                                    <p>
+                                      <strong>Sua resposta:</strong>{' '}
+                                      <span className="font-medium text-[#1A1D2E]">
+                                        {respEnviada?.resposta_dada || '(Não respondeu)'}
+                                      </span>
+                                    </p>
+                                    {isObj && (
+                                      <p>
+                                        <strong>Gabarito correto:</strong>{' '}
+                                        <span className="font-medium text-emerald-700">
+                                          Opção {p.resposta_correta}
+                                        </span>
+                                      </p>
+                                    )}
+                                    {p.explicacao && (
+                                      <p className="mt-1 pt-1 border-t border-slate-200/60 text-slate-600 italic">
+                                        💡 <strong>Explicação:</strong> {p.explicacao}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Modal para Visualizar Arquivo Original / Conteúdo Extraído */}
       <Dialog open={showOriginalModal} onOpenChange={setShowOriginalModal}>

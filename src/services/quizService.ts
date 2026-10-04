@@ -22,6 +22,35 @@ export const quizService = {
     })
   },
 
+  // Atualizar uma pergunta existente
+  async atualizarPergunta(
+    id: string,
+    data: Partial<Omit<PerguntaRecord, 'id' | 'quiz_id' | 'created' | 'updated'>>,
+  ): Promise<PerguntaRecord> {
+    return pb.collection('perguntas').update<PerguntaRecord>(id, data)
+  },
+
+  // Criar uma nova pergunta no quiz
+  async criarPergunta(
+    data: Omit<PerguntaRecord, 'id' | 'created' | 'updated'>,
+  ): Promise<PerguntaRecord> {
+    return pb.collection('perguntas').create<PerguntaRecord>(data)
+  },
+
+  // Excluir uma pergunta
+  async excluirPergunta(id: string): Promise<boolean> {
+    return pb.collection('perguntas').delete(id)
+  },
+
+  // Reordenar perguntas em lote atualizando o campo ordem
+  async reordenarPerguntas(
+    perguntasComNovaOrdem: Array<{ id: string; ordem: number }>,
+  ): Promise<void> {
+    await Promise.all(
+      perguntasComNovaOrdem.map((p) => pb.collection('perguntas').update(p.id, { ordem: p.ordem })),
+    )
+  },
+
   // Obter tentativas de um quiz
   async getTentativasDoQuiz(quizId: string): Promise<TentativaRecord[]> {
     return pb.collection('tentativas').getFullList<TentativaRecord>({

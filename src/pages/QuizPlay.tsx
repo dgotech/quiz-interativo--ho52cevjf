@@ -17,6 +17,9 @@ import {
   RotateCcw,
   ListOrdered,
   BookOpen,
+  XCircle,
+  HelpCircle,
+  Lightbulb,
 } from 'lucide-react'
 
 export default function QuizPlay() {
@@ -33,6 +36,8 @@ export default function QuizPlay() {
   const [gameState, setGameState] = useState<'intro' | 'playing' | 'result'>('intro')
   const [currentIndex, setCurrentIndex] = useState(0)
   const [respostas, setRespostas] = useState<Record<string, string>>({}) // perguntaId -> resposta
+  // Guarda quais perguntas já foram confirmadas para feedback imediato
+  const [confirmedQuestions, setConfirmedQuestions] = useState<Record<string, boolean>>({})
   const [savingResult, setSavingResult] = useState(false)
   const [finalScore, setFinalScore] = useState(0)
 
@@ -95,15 +100,22 @@ export default function QuizPlay() {
     setCurrentIndex(0)
     setSecondsElapsed(0)
     setRespostas({})
+    setConfirmedQuestions({})
   }
 
   const currentQuestion = perguntas[currentIndex]
   const isLastQuestion = currentIndex === perguntas.length - 1
 
   const currentAnswer = currentQuestion ? respostas[currentQuestion.id] || '' : ''
+  const isCurrentConfirmed = currentQuestion ? !!confirmedQuestions[currentQuestion.id] : false
+  const isObj = currentQuestion?.tipo === 'multipla_escolha'
+  const isCorrect =
+    isObj && currentQuestion?.resposta_correta
+      ? currentAnswer === currentQuestion.resposta_correta
+      : false
 
   const handleSelectOption = (label: string) => {
-    if (!currentQuestion) return
+    if (!currentQuestion || isCurrentConfirmed) return
     setRespostas((prev) => ({
       ...prev,
       [currentQuestion.id]: label,
@@ -111,17 +123,26 @@ export default function QuizPlay() {
   }
 
   const handleTextAnswerChange = (val: string) => {
-    if (!currentQuestion) return
+    if (!currentQuestion || isCurrentConfirmed) return
     setRespostas((prev) => ({
       ...prev,
       [currentQuestion.id]: val,
     }))
   }
 
-  const canGoNext = !!currentAnswer && currentAnswer.trim().length > 0
+  const hasAnswered = !!currentAnswer && currentAnswer.trim().length > 0
 
+  // Confirmar resposta para ver feedback imediato
+  const handleConfirmAnswer = () => {
+    if (!currentQuestion || !hasAnswered) return
+    setConfirmedQuestions((prev) => ({
+      ...prev,
+      [currentQuestion.id]: true,
+    }))
+  }
+
+  // Avançar para próxima pergunta ou concluir
   const handleNext = () => {
-    if (!canGoNext) return
     if (isLastQuestion) {
       finishGame()
     } else {
@@ -321,31 +342,73 @@ export default function QuizPlay() {
             </h2>
           </div>
 
-          {/* Opções de Múltipla Escolha */}
+          {/* Opções de Múltipla Escolha com Feedback Imediato */}
           {isObj && currentQuestion.opcoes && (
             <div className="grid grid-cols-1 gap-3.5">
               {currentQuestion.opcoes.map((opcao) => {
                 const isSelected = currentAnswer === opcao.label
+                const isTheCorrectOption = currentQuestion.resposta_correta === opcao.label
+
+                // Estilização baseada em estado antes ou depois de confirmar
+                let cardStyle = ''
+                let badgeStyle = ''
+
+                if (isCurrentConfirmed) {
+                  if (isTheCorrectOption) {
+                    // Verde vibrante para a correta
+                    cardStyle =
+                      'bg-emerald-500/20 border-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-[1.01]'
+                    badgeStyle = 'bg-emerald-500 text-white ring-2 ring-emerald-300'
+                  } else if (isSelected && !isTheCorrectOption) {
+                    // Vermelho vibrante para quem errou
+                    cardStyle =
+                      'bg-rose-500/20 border-rose-500 text-white shadow-lg shadow-rose-500/20'
+                    badgeStyle = 'bg-rose-500 text-white ring-2 ring-rose-300'
+                  } else {
+                    cardStyle = 'bg-white/5 border-white/5 text-slate-400 opacity-60'
+                    badgeStyle = 'bg-white/10 text-slate-500'
+                  }
+                } else {
+                  // Antes de confirmar
+                  if (isSelected) {
+                    cardStyle =
+                      'bg-[#6C4DF6]/20 border-[#6C4DF6] text-white shadow-lg shadow-[#6C4DF6]/25 scale-[1.01]'
+                    badgeStyle = 'bg-[#6C4DF6] text-white'
+                  } else {
+                    cardStyle =
+                      'bg-white/5 border-white/10 text-slate-300 hover:border-white/30 hover:bg-white/[0.08]'
+                    badgeStyle = 'bg-white/10 text-slate-400'
+                  }
+                }
 
                 return (
                   <div
                     key={opcao.label}
                     onClick={() => handleSelectOption(opcao.label)}
-                    className={`p-4 sm:p-5 rounded-2xl border-2 cursor-pointer transition-all flex items-center gap-4 ${
-                      isSelected
-                        ? 'bg-[#6C4DF6]/20 border-[#6C4DF6] text-white shadow-lg shadow-[#6C4DF6]/25 scale-[1.01]'
-                        : 'bg-white/5 border-white/10 text-slate-300 hover:border-white/30 hover:bg-white/[0.08]'
-                    }`}
+                    className={`p-4 sm:p-5 rounded-2xl border-2 transition-all flex items-center gap-4 ${
+                      isCurrentConfirmed ? 'cursor-default' : 'cursor-pointer'
+                    } ${cardStyle}`}
                   >
                     <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 transition-colors ${
-                        isSelected ? 'bg-[#6C4DF6] text-white' : 'bg-white/10 text-slate-400'
-                      }`}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 transition-colors ${badgeStyle}`}
                     >
                       {opcao.label}
                     </div>
 
                     <p className="text-sm sm:text-base font-medium flex-1">{opcao.texto}</p>
+
+                    {/* Ícones de feedback após confirmação */}
+                    {isCurrentConfirmed && isTheCorrectOption && (
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shrink-0 animate-fade-in shadow-sm">
+                        <CheckCircle2 className="w-4 h-4" /> Alternativa Correta
+                      </span>
+                    )}
+
+                    {isCurrentConfirmed && isSelected && !isTheCorrectOption && (
+                      <span className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-500 text-white shrink-0 animate-fade-in shadow-sm">
+                        <XCircle className="w-4 h-4" /> Sua Escolha (Incorreta)
+                      </span>
+                    )}
                   </div>
                 )
               })}
@@ -354,17 +417,84 @@ export default function QuizPlay() {
 
           {/* Pergunta Aberta: Textarea */}
           {!isObj && (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Textarea
                 placeholder="Digite sua resposta explicativa com suas palavras..."
                 value={currentAnswer}
+                disabled={isCurrentConfirmed}
                 onChange={(e) => handleTextAnswerChange(e.target.value)}
                 rows={6}
-                className="rounded-2xl bg-white/5 border-white/15 text-white placeholder:text-slate-500 focus-visible:ring-[#00C4A7] text-sm sm:text-base p-4 leading-relaxed"
+                className="rounded-2xl bg-white/5 border-white/15 text-white placeholder:text-slate-500 focus-visible:ring-[#00C4A7] text-sm sm:text-base p-4 leading-relaxed disabled:opacity-80"
               />
               <div className="flex items-center justify-between text-xs text-slate-400 px-1">
                 <span>Dica: Explique sua resposta de forma completa.</span>
                 <span>{currentAnswer.length} caracteres</span>
+              </div>
+            </div>
+          )}
+
+          {/* Banner de Feedback Imediato Descontraído */}
+          {isCurrentConfirmed && (
+            <div
+              className={`p-5 rounded-2xl border-2 animate-fade-in flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl ${
+                !isObj
+                  ? 'bg-purple-500/15 border-purple-400/40 text-purple-100'
+                  : isCorrect
+                    ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+                    : 'bg-rose-500/20 border-rose-400/50 text-rose-100'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                    !isObj
+                      ? 'bg-purple-500 text-white'
+                      : isCorrect
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-rose-500 text-white'
+                  }`}
+                >
+                  {!isObj ? (
+                    <HelpCircle className="w-6 h-6" />
+                  ) : isCorrect ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : (
+                    <XCircle className="w-6 h-6" />
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <h4 className="text-base font-extrabold text-white flex items-center gap-2">
+                    {!isObj
+                      ? 'Resposta registrada!'
+                      : isCorrect
+                        ? '🎉 Mandou bem! Resposta correta!'
+                        : '❌ Não foi dessa vez!'}
+                  </h4>
+
+                  {isObj && !isCorrect && (
+                    <p className="text-xs sm:text-sm text-slate-200">
+                      A alternativa correta é a{' '}
+                      <strong className="text-emerald-300 font-extrabold underline underline-offset-2">
+                        Opção {currentQuestion.resposta_correta}
+                      </strong>
+                      .
+                    </p>
+                  )}
+
+                  {!isObj && currentQuestion.resposta_correta && (
+                    <p className="text-xs text-purple-200">
+                      <strong>Gabarito sugerido:</strong> {currentQuestion.resposta_correta}
+                    </p>
+                  )}
+
+                  {currentQuestion.explicacao && (
+                    <p className="text-xs text-slate-300 italic pt-1 flex items-center gap-1.5">
+                      <Lightbulb className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{currentQuestion.explicacao}</span>
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -374,7 +504,7 @@ export default function QuizPlay() {
         <footer className="max-w-3xl w-full mx-auto flex items-center justify-between gap-4 pt-4 shrink-0">
           <Button
             onClick={handlePrev}
-            disabled={currentIndex === 0}
+            disabled={currentIndex === 0 || savingResult}
             variant="ghost"
             className="rounded-xl text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-30"
           >
@@ -382,28 +512,45 @@ export default function QuizPlay() {
             Anterior
           </Button>
 
-          <Button
-            onClick={handleNext}
-            disabled={!canGoNext || savingResult}
-            className="h-12 px-8 rounded-2xl font-bold text-white bg-gradient-to-r from-[#6C4DF6] via-[#8E6FFF] to-[#00C4A7] hover:opacity-95 shadow-lg shadow-[#6C4DF6]/25 disabled:opacity-40 transition-all"
-          >
-            {savingResult ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Gravando resultado...
-              </>
-            ) : isLastQuestion ? (
-              <>
-                Concluir Quiz
-                <CheckCircle2 className="w-5 h-5 ml-2" />
-              </>
-            ) : (
-              <>
-                Próxima
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </>
-            )}
-          </Button>
+          {!isCurrentConfirmed ? (
+            /* Botão de CONFIRMAR RESPOSTA */
+            <Button
+              onClick={handleConfirmAnswer}
+              disabled={!hasAnswered}
+              className="h-12 px-8 rounded-2xl font-bold text-white bg-gradient-to-r from-[#6C4DF6] via-[#8E6FFF] to-[#00C4A7] hover:opacity-95 shadow-lg shadow-[#6C4DF6]/25 disabled:opacity-40 transition-all transform active:scale-95"
+            >
+              Confirmar Resposta
+              <CheckCircle2 className="w-5 h-5 ml-2" />
+            </Button>
+          ) : (
+            /* Botão de AVANÇAR APÓS FEEDBACK */
+            <Button
+              onClick={handleNext}
+              disabled={savingResult}
+              className={`h-12 px-8 rounded-2xl font-bold text-white transition-all shadow-lg transform active:scale-95 ${
+                isLastQuestion
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-95 shadow-emerald-500/25'
+                  : 'bg-gradient-to-r from-[#6C4DF6] to-[#00C4A7] hover:opacity-95 shadow-[#6C4DF6]/25'
+              }`}
+            >
+              {savingResult ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Gravando resultado...
+                </>
+              ) : isLastQuestion ? (
+                <>
+                  Ver Resultado Final
+                  <Trophy className="w-5 h-5 ml-2" />
+                </>
+              ) : (
+                <>
+                  Próxima Pergunta
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </>
+              )}
+            </Button>
+          )}
         </footer>
       </div>
     )
