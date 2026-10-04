@@ -18,6 +18,8 @@ export interface QuizRecord extends RecordModel {
   nome_quiz: string
   conteudo_extraido?: string
   usuario_id: string
+  token_publico?: string
+  publico_ativo?: boolean
   expand?: {
     usuario_id?: UserRecord
   }
@@ -50,7 +52,8 @@ export interface RespostaItem {
 
 export interface TentativaRecord extends RecordModel {
   quiz_id: string
-  usuario_id: string
+  usuario_id?: string
+  nome_jogador?: string
   respostas: RespostaItem[]
   pontuacao: number // 0 a 100
   expand?: {

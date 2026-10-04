@@ -21,6 +21,7 @@ import Quizzes from './pages/Quizzes'
 import NewQuiz from './pages/NewQuiz'
 import QuizView from './pages/QuizView'
 import QuizPlay from './pages/QuizPlay'
+import PublicQuizPlay from './pages/PublicQuizPlay'
 import Profile from './pages/Profile'
 import NotFound from './pages/NotFound'
 
@@ -52,6 +53,9 @@ const App = () => (
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/confirm-email-change" element={<ConfirmEmailChange />} />
+
+          {/* Rota Pública do Quiz Compartilhável por Link (Sem necessidade de login) */}
+          <Route path="/p/:token" element={<PublicQuizPlay />} />
 
           {/* Rota Especial do Jogo (Ocupa toda a tela, sem sidebar) */}
           <Route

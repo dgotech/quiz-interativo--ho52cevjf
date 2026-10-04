@@ -159,6 +159,8 @@ routerAdd(
       quizRecord.set('nome_quiz', quizTitle)
       quizRecord.set('conteudo_extraido', markdown)
       quizRecord.set('usuario_id', authUser.id)
+      quizRecord.set('token_publico', $security.randomString(32))
+      quizRecord.set('publico_ativo', true)
       $app.save(quizRecord)
       createdQuizId = quizRecord.id
 

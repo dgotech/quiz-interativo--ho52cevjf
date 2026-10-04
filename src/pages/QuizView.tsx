@@ -26,12 +26,23 @@ import {
   Loader2,
   AlertCircle,
   Edit3,
+  Share2,
+  Copy,
+  Check,
+  Globe,
+  ExternalLink,
+  Users,
+  User,
+  RefreshCw,
 } from 'lucide-react'
 import { QuizQuestionsEditor } from '@/components/QuizQuestionsEditor'
+import { Switch } from '@/components/ui/switch'
+import { useToast } from '@/hooks/use-toast'
 
 export default function QuizView() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const { toast } = useToast()
 
   const [quiz, setQuiz] = useState<QuizRecord | null>(null)
   const [perguntas, setPerguntas] = useState<PerguntaRecord[]>([])
@@ -44,6 +55,11 @@ export default function QuizView() {
 
   // Modal para ver conteúdo original extraído
   const [showOriginalModal, setShowOriginalModal] = useState(false)
+
+  // Estados de compartilhamento
+  const [copied, setCopied] = useState(false)
+  const [togglingShare, setTogglingShare] = useState(false)
+  const [regeneratingToken, setRegeneratingToken] = useState(false)
 
   // Acordeão de detalhes da tentativa
   const [expandedTentativaId, setExpandedTentativaId] = useState<string | null>(null)
@@ -102,6 +118,74 @@ export default function QuizView() {
   const isPpt = quiz.tipo_arquivo === 'pptx'
   const hasCompleted = tentativas.length > 0
   const bestScore = hasCompleted ? Math.max(...tentativas.map((t) => t.pontuacao || 0)) : 0
+
+  const shareUrl = quiz.token_publico ? `${window.location.origin}/p/${quiz.token_publico}` : ''
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      toast({
+        title: 'Link copiado!',
+        description: 'Qualquer pessoa com o link pode responder sem precisar de cadastro.',
+      })
+      setTimeout(() => setCopied(false), 2500)
+    } catch (err) {
+      console.error('Falha ao copiar:', err)
+      toast({
+        title: 'Não foi possível copiar',
+        description: 'Copie manualmente o link exibido no campo.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleToggleShare = async (checked: boolean) => {
+    if (!quiz) return
+    setTogglingShare(true)
+    try {
+      const updated = await quizService.alternarCompartilhamento(quiz.id, checked)
+      setQuiz(updated)
+      toast({
+        title: checked ? 'Link público ativado' : 'Link público desativado',
+        description: checked
+          ? 'Agora qualquer pessoa pode acessar e responder pelo link compartilhado.'
+          : 'O acesso público foi pausado. Apenas você tem acesso ao quiz.',
+      })
+    } catch (err) {
+      console.error('Erro ao alternar compartilhamento:', err)
+      toast({
+        title: 'Erro ao alterar status',
+        description: 'Tente novamente em instantes.',
+        variant: 'destructive',
+      })
+    } finally {
+      setTogglingShare(false)
+    }
+  }
+
+  const handleRegenerateToken = async () => {
+    if (!quiz) return
+    if (!confirm('Deseja gerar um novo link? O link anterior deixará de funcionar.')) return
+    setRegeneratingToken(true)
+    try {
+      const updated = await quizService.regenerarToken(quiz.id)
+      setQuiz(updated)
+      toast({
+        title: 'Novo link gerado com sucesso!',
+        description: 'Envie o novo endereço para os participantes.',
+      })
+    } catch (err) {
+      console.error('Erro ao regenerar token:', err)
+      toast({
+        title: 'Erro ao gerar novo link',
+        variant: 'destructive',
+      })
+    } finally {
+      setRegeneratingToken(false)
+    }
+  }
 
   const formatarData = (dataStr: string) => {
     try {
@@ -226,6 +310,117 @@ export default function QuizView() {
         </div>
       </div>
 
+      {/* CARD DE COMPARTILHAMENTO PÚBLICO (SEM LOGIN) */}
+      <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-[#6C4DF6] flex items-center justify-center shrink-0">
+              <Share2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base text-[#1A1D2E]">
+                  Compartilhar Quiz por Link
+                </h3>
+                {quiz.publico_ativo ? (
+                  <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Globe className="w-3 h-3 text-emerald-600" />
+                    Link Ativo
+                  </Badge>
+                ) : (
+                  <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    Privado
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-[#5A6172]">
+                Envie para grupos no WhatsApp, Telegram ou e-mail. Participantes jogam sem precisar
+                criar conta!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start sm:self-center bg-[#F7F8FC] p-2 rounded-2xl border border-[#E5E8F0]">
+            <span className="text-xs font-semibold text-[#1A1D2E]">
+              {quiz.publico_ativo ? 'Link Ativo' : 'Link Desativado'}
+            </span>
+            <Switch
+              checked={!!quiz.publico_ativo}
+              disabled={togglingShare}
+              onCheckedChange={handleToggleShare}
+            />
+          </div>
+        </div>
+
+        {quiz.publico_ativo ? (
+          <div className="space-y-3 pt-1">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <div className="flex-1 flex items-center bg-[#F7F8FC] border border-[#E5E8F0] rounded-2xl px-3.5 py-2.5 text-xs text-[#1A1D2E] font-mono overflow-hidden">
+                <Globe className="w-4 h-4 text-[#6C4DF6] mr-2 shrink-0" />
+                <span className="truncate select-all flex-1">{shareUrl}</span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  onClick={handleCopyLink}
+                  className="rounded-2xl h-11 px-5 font-bold text-xs bg-[#6C4DF6] text-white hover:bg-[#5939e6] shadow-sm flex items-center gap-2 flex-1 sm:flex-initial"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      Copiar Link
+                    </>
+                  )}
+                </Button>
+
+                <a
+                  href={shareUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex"
+                >
+                  <Button
+                    variant="outline"
+                    className="rounded-2xl h-11 px-3.5 text-xs font-semibold border-[#E5E8F0] text-[#1A1D2E] hover:bg-slate-50"
+                    title="Testar link como participante"
+                  >
+                    <ExternalLink className="w-4 h-4 text-[#5A6172]" />
+                  </Button>
+                </a>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-[#5A6172] pt-1">
+              <span>
+                ✨ <strong>Sem cadastro:</strong> O convidado só informa o nome e joga na hora.
+              </span>
+              <button
+                type="button"
+                onClick={handleRegenerateToken}
+                disabled={regeneratingToken}
+                className="text-[#6C4DF6] hover:underline font-semibold flex items-center gap-1 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${regeneratingToken ? 'animate-spin' : ''}`} />
+                Renovar link
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              O compartilhamento está desativado. Ative a chave acima para gerar o link e liberar o
+              acesso sem login.
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* RENDERIZAÇÃO CONDICIONAL BASEADA NA ABA ATIVA */}
       {activeTab === 'questions' ? (
         <QuizQuestionsEditor quizId={quiz.id} perguntas={perguntas} onRefresh={loadData} />
@@ -319,9 +514,22 @@ export default function QuizView() {
                           </div>
 
                           <div>
-                            <h4 className="text-sm font-bold text-[#1A1D2E]">
-                              Tentativa #{tentativaNumero}
-                            </h4>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-[#1A1D2E]">
+                                Tentativa #{tentativaNumero}
+                              </h4>
+                              {tent.nome_jogador ? (
+                                <Badge className="bg-purple-50 text-[#6C4DF6] border-purple-200 text-[10px] font-semibold gap-1 px-2 py-0">
+                                  <User className="w-3 h-3" />
+                                  {tent.nome_jogador} (Convidado)
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-slate-100 text-[#5A6172] border-slate-200 text-[10px] font-semibold gap-1 px-2 py-0">
+                                  <User className="w-3 h-3" />
+                                  Você (Admin/Dono)
+                                </Badge>
+                              )}
+                            </div>
                             <p className="text-xs text-[#5A6172]">{formatarData(tent.created)}</p>
                           </div>
                         </div>

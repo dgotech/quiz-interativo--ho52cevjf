@@ -40,6 +40,7 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
+  Share2,
 } from 'lucide-react'
 
 export default function Quizzes() {
@@ -267,6 +268,28 @@ export default function Quizzes() {
                           <Play className="w-4 h-4 mr-2 text-[#6C4DF6]" />
                           Responder novamente
                         </DropdownMenuItem>
+                        {quiz.token_publico && (
+                          <DropdownMenuItem
+                            onClick={async () => {
+                              const url = `${window.location.origin}/p/${quiz.token_publico}`
+                              try {
+                                await navigator.clipboard.writeText(url)
+                                toast({
+                                  title: 'Link copiado!',
+                                  description: 'Link público copiado para a área de transferência.',
+                                })
+                              } catch (_) {
+                                toast({
+                                  title: 'Erro ao copiar',
+                                  variant: 'destructive',
+                                })
+                              }
+                            }}
+                          >
+                            <Share2 className="w-4 h-4 mr-2 text-[#00C4A7]" />
+                            Copiar link público
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           onClick={() => setQuizToDelete(quiz)}
                           className="text-red-600 focus:text-red-600"

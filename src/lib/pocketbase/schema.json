@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-04T18:52:55.185Z",
+  "generatedAt": "2026-10-04T19:01:54.476Z",
   "collections": [
     {
       "name": "users",
@@ -48,8 +48,8 @@
       "name": "quizzes",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && usuario_id = @request.auth.id",
-        "view": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "list": "(@request.auth.id != '' && usuario_id = @request.auth.id) || publico_ativo = true",
+        "view": "(@request.auth.id != '' && usuario_id = @request.auth.id) || publico_ativo = true",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != '' && usuario_id = @request.auth.id",
         "delete": "@request.auth.id != '' && usuario_id = @request.auth.id"
@@ -100,16 +100,31 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "token_publico",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "publico_ativo",
+          "type": "bool",
+          "required": false,
+          "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_quizzes_usuario_created ON quizzes (usuario_id, created DESC)"]
+      "indexes": [
+        "CREATE INDEX idx_quizzes_usuario_created ON quizzes (usuario_id, created DESC)",
+        "CREATE INDEX `idx_quizzes_token_publico` ON `quizzes` (token_publico)"
+      ]
     },
     {
       "name": "perguntas",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
-        "view": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
+        "list": "(@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id) || quiz_id.publico_ativo = true",
+        "view": "(@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id) || quiz_id.publico_ativo = true",
         "create": "@request.auth.id != ''",
         "update": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
         "delete": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id"
@@ -180,9 +195,9 @@
       "name": "tentativas",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != '' && usuario_id = @request.auth.id",
-        "view": "@request.auth.id != '' && usuario_id = @request.auth.id",
-        "create": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "list": "@request.auth.id != '' && (usuario_id = @request.auth.id || quiz_id.usuario_id = @request.auth.id)",
+        "view": "@request.auth.id != '' && (usuario_id = @request.auth.id || quiz_id.usuario_id = @request.auth.id)",
+        "create": "(@request.auth.id != '') || (quiz_id.publico_ativo = true)",
         "update": "@request.auth.id != '' && usuario_id = @request.auth.id",
         "delete": "@request.auth.id != '' && usuario_id = @request.auth.id"
       },
@@ -197,7 +212,7 @@
         {
           "name": "usuario_id",
           "type": "relation",
-          "required": true,
+          "required": false,
           "system": false,
           "collectionRef": "users"
         },
@@ -226,6 +241,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "nome_jogador",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": [

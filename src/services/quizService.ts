@@ -14,6 +14,34 @@ export const quizService = {
     return pb.collection('quizzes').getOne<QuizRecord>(id)
   },
 
+  // Obter quiz público ativo por token
+  async getQuizByToken(token: string): Promise<QuizRecord> {
+    return pb
+      .collection('quizzes')
+      .getFirstListItem<QuizRecord>(`token_publico = "${token}" && publico_ativo = true`)
+  },
+
+  // Alternar ou atualizar status de compartilhamento público de um quiz
+  async alternarCompartilhamento(id: string, publicoAtivo: boolean): Promise<QuizRecord> {
+    return pb.collection('quizzes').update<QuizRecord>(id, {
+      publico_ativo: publicoAtivo,
+    })
+  },
+
+  // Gerar novo token público para o quiz (caso queira renovar link)
+  async regenerarToken(id: string): Promise<QuizRecord> {
+    // Gerar token de 32 caracteres alfanuméricos
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let token = ''
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return pb.collection('quizzes').update<QuizRecord>(id, {
+      token_publico: token,
+      publico_ativo: true,
+    })
+  },
+
   // Obter perguntas de um quiz ordenadas por ordem asc
   async getPerguntas(quizId: string): Promise<PerguntaRecord[]> {
     return pb.collection('perguntas').getFullList<PerguntaRecord>({
@@ -69,7 +97,8 @@ export const quizService = {
   // Salvar uma tentativa realizada
   async salvarTentativa(data: {
     quiz_id: string
-    usuario_id: string
+    usuario_id?: string
+    nome_jogador?: string
     respostas: Array<{ pergunta_id: string; resposta_dada: string; correta?: boolean }>
     pontuacao: number
   }): Promise<TentativaRecord> {
