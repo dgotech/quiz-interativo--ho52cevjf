@@ -1,0 +1,236 @@
+{
+  "generatedAt": "2026-10-04T18:37:39.465Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "quizzes",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "view": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && usuario_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "tipo_arquivo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["pptx", "xlsx"]
+        },
+        {
+          "name": "nome_arquivo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "nome_quiz",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "conteudo_extraido",
+          "type": "editor",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "usuario_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_quizzes_usuario_created ON quizzes (usuario_id, created DESC)"]
+    },
+    {
+      "name": "perguntas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
+        "view": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && quiz_id.usuario_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "quiz_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "quizzes"
+        },
+        {
+          "name": "enunciado",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "tipo",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["multipla_escolha", "aberta"]
+        },
+        {
+          "name": "opcoes",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "resposta_correta",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "explicacao",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_perguntas_quiz_ordem ON perguntas (quiz_id, ordem ASC)"]
+    },
+    {
+      "name": "tentativas",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "view": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "create": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "update": "@request.auth.id != '' && usuario_id = @request.auth.id",
+        "delete": "@request.auth.id != '' && usuario_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "quiz_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "quizzes"
+        },
+        {
+          "name": "usuario_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "respostas",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pontuacao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_tentativas_quiz_usuario ON tentativas (quiz_id, usuario_id, created DESC)"
+      ]
+    }
+  ]
+}
