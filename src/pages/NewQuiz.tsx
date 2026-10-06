@@ -141,21 +141,21 @@ export default function NewQuiz() {
       setProcessingStep(
         'Enviando apresentação pesada (~' +
           formatFileSize(selectedFile.size) +
-          ')... Isso pode levar alguns segundos.',
+          ')... A velocidade depende da sua conexão.',
       )
     }
 
     const stepTimer1 = setTimeout(() => {
-      setProcessingStep('Lendo slides e extraindo texto com IA...')
-    }, 4000)
+      setProcessingStep('Upload concluído! Convertendo documento e extraindo tópicos...')
+    }, 6000)
 
     const stepTimer2 = setTimeout(() => {
-      setProcessingStep('Analisando o conteúdo com IA e formulando perguntas...')
-    }, 12000)
+      setProcessingStep('Analisando o conteúdo e formulando perguntas inteligentes...')
+    }, 16000)
 
     const stepTimer3 = setTimeout(() => {
       setProcessingStep('Finalizando a estruturação do quiz no banco de dados...')
-    }, 25000)
+    }, 30000)
 
     const abortController = new AbortController()
     abortControllerRef.current = abortController

@@ -210,4 +210,5 @@ routerAdd(
     })
   },
   $apis.requireAuth(),
+  $apis.bodyLimit(105 * 1024 * 1024),
 )

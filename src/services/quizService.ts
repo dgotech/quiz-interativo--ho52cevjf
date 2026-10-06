@@ -119,26 +119,37 @@ export const quizService = {
       return { valida: false, erro: 'SESSION_EXPIRED' }
     }
     try {
-      await pb.collection('users').authRefresh()
-      return { valida: true }
-    } catch (err: unknown) {
-      const status =
-        (err as { status?: number })?.status ||
-        (err as { response?: { status?: number } })?.response?.status
+      // Salvar snapshot antes caso o authRefresh falhe por oscilação de rede
+      const prevToken = pb.authStore.token
+      const prevModel = pb.authStore.model
+      try {
+        await pb.collection('users').authRefresh()
+        return { valida: true }
+      } catch (refreshErr: unknown) {
+        const status =
+          (refreshErr as { status?: number })?.status ||
+          (refreshErr as { response?: { status?: number } })?.response?.status
 
-      // Apenas consideramos sessão expirada e limpamos se o backend retornou 401 ou 403 explicitamente
-      if (status === 401 || status === 403) {
-        pb.authStore.clear()
-        return { valida: false, erro: 'SESSION_EXPIRED' }
+        // Apenas consideramos sessão expirada e limpamos se o backend retornou 401 ou 403 explicitamente
+        if (status === 401 || status === 403) {
+          pb.authStore.clear()
+          return { valida: false, erro: 'SESSION_EXPIRED' }
+        }
+
+        // Se foi erro de rede (Failed to fetch, timeout, 5xx), restaurar token anterior se o authStore tiver sido esvaziado
+        if (!pb.authStore.token && prevToken) {
+          pb.authStore.save(prevToken, prevModel)
+        }
+
+        console.warn(
+          'Verificação de sessão online não concluiu (rede/servidor instável). Mantendo token local:',
+          refreshErr,
+        )
+        return { valida: true, erro: 'NETWORK_WARNING' }
       }
-
-      // Se foi erro de rede (offline, timeout na checagem, 5xx), a sessão local no JWT ainda pode estar válida
-      // Mantemos o authStore intacto e permitimos seguir se o token local ainda for válido
-      console.warn(
-        'Verificação de sessão online não concluiu (rede/servidor instável). Mantendo token local:',
-        err,
-      )
-      return { valida: true, erro: 'NETWORK_WARNING' }
+    } catch (outerErr: unknown) {
+      console.warn('Erro defensivo ao validar sessão:', outerErr)
+      return { valida: pb.authStore.isValid }
     }
   },
 
@@ -147,7 +158,11 @@ export const quizService = {
     file: File,
     signal?: AbortSignal,
   ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
-    // 1. Validar e tentar renovar sessão ativamente antes de transferir arquivo grande
+    // 1. Snapshot defensivo da autenticação atual
+    const initialToken = pb.authStore.token
+    const initialModel = pb.authStore.model
+
+    // 2. Validar e tentar renovar sessão ativamente antes de transferir arquivo grande
     const sessaoStatus = await this.validarSessao()
     if (!sessaoStatus.valida && sessaoStatus.erro === 'SESSION_EXPIRED') {
       const err = new Error('Sua sessão expirou. Faça login novamente para enviar seu documento.')
@@ -158,11 +173,12 @@ export const quizService = {
     const formData = new FormData()
     formData.append('file', file)
 
-    const token = pb.authStore.token
+    // Pegar o token mais recente (ou o snapshot inicial se estiver intacto)
+    const token = pb.authStore.token || initialToken
 
-    // Configurar timeout generoso (5 minutos) para permitir envio de até 100MB e IA
+    // Configurar timeout generoso (8 minutos) para permitir envio de até 100MB, conversão e chamada de IA
     const controller = new AbortController()
-    const timeoutMs = 5 * 60 * 1000 // 300 segundos
+    const timeoutMs = 8 * 60 * 1000 // 480 segundos
     const timeoutId = setTimeout(() => {
       controller.abort()
     }, timeoutMs)
@@ -184,6 +200,12 @@ export const quizService = {
       })
     } catch (fetchErr: unknown) {
       clearTimeout(timeoutId)
+
+      // Garantir absolutamente que um erro de rede/timeout NUNCA deslogue o usuário
+      if (!pb.authStore.isValid && initialToken) {
+        pb.authStore.save(initialToken, initialModel)
+      }
+
       const isAbort =
         (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') ||
         (fetchErr as { name?: string })?.name === 'AbortError'
@@ -227,6 +249,7 @@ export const quizService = {
         /* intentionally ignored */
       }
 
+      // Apenas deslogar se o servidor respondeu 401 explícito
       if (response.status === 401) {
         pb.authStore.clear()
         const authErr = new Error(
@@ -234,6 +257,11 @@ export const quizService = {
         )
         ;(authErr as { code?: string }).code = 'SESSION_EXPIRED'
         throw authErr
+      }
+
+      // Para QUALQUER outro status (413, 422, 500, 502, 504), manter a sessão do usuário intacta
+      if (!pb.authStore.isValid && initialToken) {
+        pb.authStore.save(initialToken, initialModel)
       }
 
       if (response.status === 413) {
