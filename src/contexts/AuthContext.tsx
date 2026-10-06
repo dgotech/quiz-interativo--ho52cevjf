@@ -25,9 +25,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         setUser(null)
       }
-    } catch (_) {
-      setUser(null)
-      pb.authStore.clear()
+    } catch (err: unknown) {
+      const status =
+        (err as { status?: number })?.status ||
+        (err as { response?: { status?: number } })?.response?.status
+      // Apenas deslogar e limpar authStore se o backend respondeu explicitamente 401/403
+      if (status === 401 || status === 403) {
+        setUser(null)
+        pb.authStore.clear()
+      } else {
+        // Falha transitória de rede ou 5xx: manter o usuário já carregado do authStore local
+        console.warn(
+          'Não foi possível atualizar os dados do usuário no momento (erro de rede/temporário):',
+          err,
+        )
+      }
     }
   }
 

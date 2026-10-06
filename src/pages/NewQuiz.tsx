@@ -136,17 +136,26 @@ export default function NewQuiz() {
     setProcessingStep('Enviando e validando seu documento...')
 
     // Transição suave e informativa de mensagens de processamento conforme o tempo passa
+    const isLargeFile = (selectedFile.size || 0) > 10 * 1024 * 1024
+    if (isLargeFile) {
+      setProcessingStep(
+        'Enviando apresentação pesada (~' +
+          formatFileSize(selectedFile.size) +
+          ')... Isso pode levar alguns segundos.',
+      )
+    }
+
     const stepTimer1 = setTimeout(() => {
-      setProcessingStep('Lendo slides e tabelas com IA...')
-    }, 2500)
+      setProcessingStep('Lendo slides e extraindo texto com IA...')
+    }, 4000)
 
     const stepTimer2 = setTimeout(() => {
-      setProcessingStep('Gerando perguntas objetivas e dissertativas com gabarito pedagógico...')
-    }, 8000)
+      setProcessingStep('Analisando o conteúdo com IA e formulando perguntas...')
+    }, 12000)
 
     const stepTimer3 = setTimeout(() => {
       setProcessingStep('Finalizando a estruturação do quiz no banco de dados...')
-    }, 20000)
+    }, 25000)
 
     const abortController = new AbortController()
     abortControllerRef.current = abortController
@@ -198,9 +207,9 @@ export default function NewQuiz() {
 
       let toastTitle = 'Ops! Não foi possível processar'
       if (errCode === 'NETWORK_ERROR') {
-        toastTitle = 'Falha de conexão'
+        toastTitle = 'Instabilidade na transferência'
       } else if (errCode === 'TIMEOUT') {
-        toastTitle = 'Tempo limite excedido'
+        toastTitle = 'Processamento demorado'
       } else if (errCode === 'FILE_TOO_LARGE') {
         toastTitle = 'Arquivo muito grande'
       } else if (errCode === 'DOCUMENT_UNREADABLE') {

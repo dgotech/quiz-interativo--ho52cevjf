@@ -111,16 +111,34 @@ export const quizService = {
   },
 
   // Validar se a sessão atual ainda é válida no backend antes de operações pesadas
-  async validarSessao(): Promise<boolean> {
+  async validarSessao(): Promise<{
+    valida: boolean
+    erro?: 'SESSION_EXPIRED' | 'NETWORK_WARNING'
+  }> {
     if (!pb.authStore.isValid || !pb.authStore.token) {
-      return false
+      return { valida: false, erro: 'SESSION_EXPIRED' }
     }
     try {
       await pb.collection('users').authRefresh()
-      return true
-    } catch {
-      pb.authStore.clear()
-      return false
+      return { valida: true }
+    } catch (err: unknown) {
+      const status =
+        (err as { status?: number })?.status ||
+        (err as { response?: { status?: number } })?.response?.status
+
+      // Apenas consideramos sessão expirada e limpamos se o backend retornou 401 ou 403 explicitamente
+      if (status === 401 || status === 403) {
+        pb.authStore.clear()
+        return { valida: false, erro: 'SESSION_EXPIRED' }
+      }
+
+      // Se foi erro de rede (offline, timeout na checagem, 5xx), a sessão local no JWT ainda pode estar válida
+      // Mantemos o authStore intacto e permitimos seguir se o token local ainda for válido
+      console.warn(
+        'Verificação de sessão online não concluiu (rede/servidor instável). Mantendo token local:',
+        err,
+      )
+      return { valida: true, erro: 'NETWORK_WARNING' }
     }
   },
 
@@ -130,8 +148,8 @@ export const quizService = {
     signal?: AbortSignal,
   ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
     // 1. Validar e tentar renovar sessão ativamente antes de transferir arquivo grande
-    const sessaoValida = await this.validarSessao()
-    if (!sessaoValida) {
+    const sessaoStatus = await this.validarSessao()
+    if (!sessaoStatus.valida && sessaoStatus.erro === 'SESSION_EXPIRED') {
       const err = new Error('Sua sessão expirou. Faça login novamente para enviar seu documento.')
       ;(err as { code?: string }).code = 'SESSION_EXPIRED'
       throw err
@@ -171,17 +189,27 @@ export const quizService = {
         (fetchErr as { name?: string })?.name === 'AbortError'
 
       if (isAbort) {
+        // Se foi o sinal externo cancelado pelo usuário
+        if (signal?.aborted) {
+          const cancelErr = new Error('O envio foi cancelado.')
+          ;(cancelErr as { code?: string }).code = 'ABORTED'
+          throw cancelErr
+        }
+
         const timeoutErr = new Error(
-          'O processamento demorou mais que o esperado (tempo limite de 5 minutos excedido). Verifique sua conexão ou tente um arquivo menor.',
+          'O processamento do documento demorou mais que o esperado pelo servidor. Tente enviar novamente ou use uma versão com menos slides/tabelas.',
         )
         ;(timeoutErr as { code?: string }).code = 'TIMEOUT'
         throw timeoutErr
       }
 
-      // Tratar erros genéricos de rede (Failed to fetch, CORS, queda de conexão, DNS)
-      const networkErr = new Error(
-        'Não foi possível conectar ao servidor. Verifique sua conexão de internet e tente novamente.',
-      )
+      // Tratar erros genéricos de rede (Failed to fetch, CORS, queda de conexão, upload interrompido)
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
+      const networkMessage = isOnline
+        ? 'A comunicação com o servidor de processamento foi interrompida durante o envio. Sua conexão está ativa, mas o servidor demorou a responder ou o envio foi reiniciado. Tente novamente.'
+        : 'Parece que seu dispositivo está desconectado da rede. Verifique sua conexão e tente novamente.'
+
+      const networkErr = new Error(networkMessage)
       ;(networkErr as { code?: string }).code = 'NETWORK_ERROR'
       throw networkErr
     } finally {
@@ -225,10 +253,18 @@ export const quizService = {
         throw docErr
       }
 
+      if (response.status === 504 || response.status === 408) {
+        const gatewayErr = new Error(
+          'O servidor demorou para concluir o processamento da apresentação. O processamento com IA em arquivos grandes pode levar mais tempo. Tente novamente.',
+        )
+        ;(gatewayErr as { code?: string }).code = 'TIMEOUT'
+        throw gatewayErr
+      }
+
       if (response.status >= 500) {
         const serverErr = new Error(
           errorMsg ||
-            'O servidor encontrou um problema ao gerar o quiz. Tente novamente em alguns instantes.',
+            'O servidor encontrou um problema ao analisar o documento. Tente novamente em alguns instantes.',
         )
         ;(serverErr as { code?: string }).code = 'SERVER_ERROR'
         throw serverErr
