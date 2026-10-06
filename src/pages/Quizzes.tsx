@@ -226,7 +226,11 @@ export default function Quizzes() {
           {filteredQuizzes.map((quiz) => {
             const isPpt = quiz.tipo_arquivo === 'pptx'
             const isConcluido = quizzesRespondidosIds.has(quiz.id)
-            const numPerguntas = perguntasCountMap[quiz.id] || 0
+            const numPerguntas = perguntasCountMap[quiz.id] || quiz.total_perguntas || 0
+            const isProcessando =
+              quiz.status_processamento === 'processando' ||
+              quiz.status_processamento === 'pendente'
+            const isErro = quiz.status_processamento === 'erro'
 
             return (
               <div
@@ -317,14 +321,32 @@ export default function Quizzes() {
                   {/* Informações de Metadados */}
                   <div className="mt-5 pt-4 border-t border-[#E5E8F0] flex items-center justify-between text-xs text-[#5A6172]">
                     <div className="flex items-center gap-1.5 font-medium">
-                      <span>
-                        {numPerguntas} {numPerguntas === 1 ? 'questão' : 'questões'}
-                      </span>
+                      {isProcessando ? (
+                        <span className="text-[#6C4DF6] font-semibold flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Processando...
+                        </span>
+                      ) : isErro ? (
+                        <span className="text-red-500 font-semibold">Falha na extração</span>
+                      ) : (
+                        <span>
+                          {numPerguntas} {numPerguntas === 1 ? 'questão' : 'questões'}
+                        </span>
+                      )}
                       <span>•</span>
                       <span>{formatarData(quiz.created)}</span>
                     </div>
 
-                    {isConcluido ? (
+                    {isProcessando ? (
+                      <Badge className="bg-indigo-50 text-[#6C4DF6] border-indigo-200 gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Gerando IA
+                      </Badge>
+                    ) : isErro ? (
+                      <Badge className="bg-red-50 text-red-600 border-red-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
+                        Atenção
+                      </Badge>
+                    ) : isConcluido ? (
                       <Badge className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold">
                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                         Concluído
@@ -343,10 +365,15 @@ export default function Quizzes() {
                   <Button
                     onClick={() => navigate(`/quiz/${quiz.id}/play`)}
                     size="sm"
-                    className="flex-1 h-9 rounded-xl font-semibold text-xs text-white bg-gradient-to-r from-[#6C4DF6] to-[#00C4A7] hover:opacity-95 shadow-sm"
+                    disabled={isProcessando || isErro || numPerguntas === 0}
+                    className="flex-1 h-9 rounded-xl font-semibold text-xs text-white bg-gradient-to-r from-[#6C4DF6] to-[#00C4A7] hover:opacity-95 shadow-sm disabled:opacity-50"
                   >
                     <Play className="w-3.5 h-3.5 mr-1.5 fill-current" />
-                    {isConcluido ? 'Jogar de novo' : 'Iniciar Quiz'}
+                    {isProcessando
+                      ? 'Processando...'
+                      : isConcluido
+                        ? 'Jogar de novo'
+                        : 'Iniciar Quiz'}
                   </Button>
                   <Button
                     onClick={() => navigate(`/quiz/${quiz.id}`)}

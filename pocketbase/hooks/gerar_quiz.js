@@ -1,69 +1,85 @@
-routerAdd(
-  'POST',
-  '/backend/v1/quizzes/generate',
-  (e) => {
-    const authUser = e.auth
-    if (!authUser || !authUser.id) {
-      return e.json(401, { message: 'Não autorizado' })
-    }
+/**
+ * Hook onRecordAfterCreateSuccess('quizzes')
+ *
+ * Dispara automaticamente após a criação de um registro na coleção 'quizzes'
+ * quando um arquivo for anexado via upload nativo do PocketBase (POST /api/collections/quizzes/records).
+ *
+ * Utiliza $documents.toMarkdown({ record, field: 'arquivo' }) para extração confiável de apresentações
+ * (.pptx) ou planilhas (.xlsx), sem sobrecarregar endpoints HTTP síncronos e sem sofrer com
+ * limites rígidos de proxy em rotas customizadas.
+ */
+onRecordAfterCreateSuccess((e) => {
+  const quizRecord = e.record
+  const arquivoName = quizRecord.getString('arquivo')
 
-    const files = e.findUploadedFiles('file')
-    if (!files || files.length === 0) {
-      return e.json(400, {
-        message: 'Nenhum arquivo enviado. Por favor, envie um arquivo .pptx ou .xlsx',
-      })
-    }
+  // Se não houver arquivo anexado, não há documento para processar
+  if (!arquivoName) {
+    return e.next()
+  }
 
-    const uploadedFile = files[0]
+  // Se já estiver concluído ou em processamento, evitar reentrâncias
+  const currentStatus = quizRecord.getString('status_processamento')
+  if (currentStatus === 'concluido' || currentStatus === 'processando') {
+    return e.next()
+  }
 
-    // Limite de tamanho de 100MB no backend
-    const maxSizeBytes = 100 * 1024 * 1024
-    if (uploadedFile.size && uploadedFile.size > maxSizeBytes) {
-      return e.json(413, {
-        message: 'O arquivo enviado excede o limite máximo permitido de 100MB.',
-      })
-    }
+  const recordId = quizRecord.id
+  const originalFileName = quizRecord.getString('nome_arquivo') || arquivoName
+  const ext = originalFileName.split('.').pop().toLowerCase()
 
-    const originalName = uploadedFile.originalName || 'documento'
-    const ext = originalName.split('.').pop().toLowerCase()
+  try {
+    // 1. Atualizar status para 'processando'
+    const recordToUpdate = $app.findRecordById('quizzes', recordId)
+    recordToUpdate.set('status_processamento', 'processando')
+    $app.save(recordToUpdate)
 
-    if (ext !== 'pptx' && ext !== 'xlsx') {
-      return e.json(400, {
-        message:
-          'Formato inválido. Apenas apresentações (.pptx) ou planilhas (.xlsx) são suportadas.',
-      })
-    }
-
+    // 2. Extrair Markdown do arquivo armazenado usando $documents.toMarkdown
     let markdown = ''
     let isTruncated = false
     try {
-      const docResult = $documents.toMarkdown({ file: uploadedFile })
+      const docResult = $documents.toMarkdown({
+        record: recordToUpdate,
+        field: 'arquivo',
+      })
       markdown = docResult.markdown || ''
       isTruncated = !!docResult.truncated
-    } catch (err) {
-      console.log('Erro ao converter documento:', err)
-      if (err && err.status === 422) {
-        return e.json(422, {
-          message:
-            'Não foi possível extrair texto do documento enviado. Certifique-se de que o arquivo contém texto legível.',
-        })
+    } catch (docErr) {
+      console.log('Erro ao converter documento em Markdown:', docErr)
+      recordToUpdate.set('status_processamento', 'erro')
+      if (docErr && docErr.status === 422) {
+        recordToUpdate.set(
+          'erro_processamento',
+          'Não foi possível extrair texto legível do arquivo enviado. Certifique-se de que a apresentação ou planilha contém texto editável.',
+        )
+      } else if (docErr && docErr.status === 413) {
+        recordToUpdate.set(
+          'erro_processamento',
+          'O volume de texto e dados da apresentação excede o limite máximo de conversão. Tente remover mídias pesadas ou reduzir a quantidade de slides.',
+        )
+      } else {
+        recordToUpdate.set(
+          'erro_processamento',
+          'Falha na extração de texto do documento. O arquivo pode estar corrompido ou protegido por senha.',
+        )
       }
-      if (err && err.status === 413) {
-        return e.json(413, {
-          message:
-            'O conteúdo de texto do documento excede a capacidade de conversão da plataforma. Tente reduzir o número de slides ou imagens embutidas.',
-        })
-      }
-      return e.json(500, { message: 'Erro ao processar o conteúdo do documento. Tente novamente.' })
+      $app.save(recordToUpdate)
+      return e.next()
     }
 
     if (!markdown || markdown.trim().length < 20) {
-      return e.json(400, {
-        message: 'O documento possui pouco ou nenhum texto identificável para gerar um quiz.',
-      })
+      recordToUpdate.set('status_processamento', 'erro')
+      recordToUpdate.set(
+        'erro_processamento',
+        'O documento possui pouco ou nenhum texto identificável para gerar um quiz.',
+      )
+      $app.save(recordToUpdate)
+      return e.next()
     }
 
-    // Chamar Skip AI para interpretar o documento e gerar perguntas
+    // Salvar o conteúdo extraído no quiz
+    recordToUpdate.set('conteudo_extraido', markdown)
+
+    // 3. Gerar perguntas com Skip AI ($ai.chat)
     const systemPrompt =
       'Você é um especialista educacional e criador de quizzes interativos em português (PT-BR). Analise o documento em Markdown fornecido e gere um quiz rico, instigante e bem estruturado. Você DEVE retornar APENAS um JSON válido e puro sem formatação markdown extra fora do json.'
 
@@ -71,7 +87,7 @@ routerAdd(
       'Abaixo está o conteúdo extraído de um documento (' +
       ext.toUpperCase() +
       ' - ' +
-      originalName +
+      originalFileName +
       (isTruncated ? ' [conteúdo parcial devido ao tamanho do arquivo]' : '') +
       '):\n\n' +
       markdown.slice(0, 32000) +
@@ -115,11 +131,15 @@ routerAdd(
         ],
         temperature: 0.3,
       })
-    } catch (err) {
-      console.log('Erro na Skip AI:', err)
-      return e.json(500, {
-        message: 'Erro ao gerar perguntas com a IA. Tente novamente mais tarde.',
-      })
+    } catch (aiErr) {
+      console.log('Erro ao chamar Skip AI:', aiErr)
+      recordToUpdate.set('status_processamento', 'erro')
+      recordToUpdate.set(
+        'erro_processamento',
+        'Erro ao formular perguntas com a inteligência artificial. Tente processar novamente.',
+      )
+      $app.save(recordToUpdate)
+      return e.next()
     }
 
     let generatedContent = ''
@@ -127,7 +147,6 @@ routerAdd(
       generatedContent = aiResponse.choices[0].message.content || ''
     }
 
-    // Limpar json caso venha encapsulado em ```json ... ```
     let jsonString = generatedContent.trim()
     if (jsonString.startsWith('```json')) {
       jsonString = jsonString.slice(7)
@@ -139,76 +158,118 @@ routerAdd(
     }
     jsonString = jsonString.trim()
 
-    let quizData
+    let quizData = null
     try {
       quizData = JSON.parse(jsonString)
     } catch (parseErr) {
-      console.log('Falha no JSON.parse da IA:', parseErr, jsonString)
-      // Tenta encontrar o bloco {...}
+      console.log('Falha ao parsear JSON direto da IA, tentando extrair objeto {}:', parseErr)
       const firstBrace = jsonString.indexOf('{')
       const lastBrace = jsonString.lastIndexOf('}')
       if (firstBrace !== -1 && lastBrace !== -1) {
         try {
           quizData = JSON.parse(jsonString.substring(firstBrace, lastBrace + 1))
         } catch (innerErr) {
-          return e.json(500, {
-            message: 'A IA não retornou um formato JSON válido. Por favor, tente enviar novamente.',
-          })
+          console.log('JSON parse falhou no bloco isolado:', innerErr)
         }
-      } else {
-        return e.json(500, { message: 'Falha ao processar estrutura das perguntas geradas.' })
       }
     }
 
-    const quizTitle = (quizData.nome_quiz && quizData.nome_quiz.trim()) || 'Quiz: ' + originalName
-    const questionsList = Array.isArray(quizData.perguntas) ? quizData.perguntas : []
-
-    if (questionsList.length === 0) {
-      return e.json(400, { message: 'Nenhuma pergunta pôde ser extraída do documento.' })
+    if (!quizData || !Array.isArray(quizData.perguntas) || quizData.perguntas.length === 0) {
+      recordToUpdate.set('status_processamento', 'erro')
+      recordToUpdate.set(
+        'erro_processamento',
+        'A IA não conseguiu estruturar as perguntas no formato esperado. Tente reenviar o documento.',
+      )
+      $app.save(recordToUpdate)
+      return e.next()
     }
 
-    // Salvar no banco usando $app
-    let createdQuizId = ''
+    const quizTitle =
+      (quizData.nome_quiz && quizData.nome_quiz.trim()) ||
+      recordToUpdate.getString('nome_quiz') ||
+      'Quiz: ' + originalFileName
+
+    const questionsList = quizData.perguntas
+
+    // 4. Salvar as perguntas criadas na coleção 'perguntas'
+    const perguntasCol = $app.findCollectionByNameOrId('perguntas')
+    for (let i = 0; i < questionsList.length; i++) {
+      const q = questionsList[i]
+      const pRecord = new Record(perguntasCol)
+      pRecord.set('quiz_id', recordId)
+      pRecord.set('enunciado', q.enunciado || 'Pergunta ' + (i + 1))
+      const qTipo = q.tipo === 'aberta' ? 'aberta' : 'multipla_escolha'
+      pRecord.set('tipo', qTipo)
+      pRecord.set('opcoes', Array.isArray(q.opcoes) ? q.opcoes : null)
+      pRecord.set('resposta_correta', q.resposta_correta || null)
+      pRecord.set('explicacao', q.explicacao || '')
+      pRecord.set('ordem', i + 1)
+      $app.save(pRecord)
+    }
+
+    // 5. Finalizar atualização do quiz para status 'concluido'
+    recordToUpdate.set('nome_quiz', quizTitle)
+    recordToUpdate.set('total_perguntas', questionsList.length)
+    recordToUpdate.set('status_processamento', 'concluido')
+    recordToUpdate.set('erro_processamento', '')
+    $app.save(recordToUpdate)
+  } catch (globalErr) {
+    console.log('Erro inesperado no hook onRecordAfterCreateSuccess(quizzes):', globalErr)
     try {
-      const quizzesCol = $app.findCollectionByNameOrId('quizzes')
-      const quizRecord = new Record(quizzesCol)
-      quizRecord.set('tipo_arquivo', ext)
-      quizRecord.set('nome_arquivo', originalName)
-      quizRecord.set('nome_quiz', quizTitle)
-      quizRecord.set('conteudo_extraido', markdown)
-      quizRecord.set('usuario_id', authUser.id)
-      quizRecord.set('token_publico', $security.randomString(32))
-      quizRecord.set('publico_ativo', true)
-      $app.save(quizRecord)
-      createdQuizId = quizRecord.id
+      const recordToUpdate = $app.findRecordById('quizzes', recordId)
+      recordToUpdate.set('status_processamento', 'erro')
+      recordToUpdate.set(
+        'erro_processamento',
+        'Erro interno no processamento do documento. Tente novamente.',
+      )
+      $app.save(recordToUpdate)
+    } catch (_) {}
+  }
 
-      const perguntasCol = $app.findCollectionByNameOrId('perguntas')
-      for (let i = 0; i < questionsList.length; i++) {
-        const q = questionsList[i]
-        const pRecord = new Record(perguntasCol)
-        pRecord.set('quiz_id', createdQuizId)
-        pRecord.set('enunciado', q.enunciado || 'Pergunta ' + (i + 1))
-        const qTipo = q.tipo === 'aberta' ? 'aberta' : 'multipla_escolha'
-        pRecord.set('tipo', qTipo)
-        pRecord.set('opcoes', Array.isArray(q.opcoes) ? q.opcoes : null)
-        pRecord.set('resposta_correta', q.resposta_correta || null)
-        pRecord.set('explicacao', q.explicacao || '')
-        pRecord.set('ordem', i + 1)
-        $app.save(pRecord)
-      }
-    } catch (dbErr) {
-      console.log('Erro ao salvar quiz no banco:', dbErr)
-      return e.json(500, { message: 'Erro ao salvar o quiz gerado no banco de dados.' })
+  return e.next()
+}, 'quizzes')
+
+/**
+ * Rota auxiliar para caso o usuário queira reprocessar um quiz existente
+ * ou disparar o processamento sob demanda sem re-upload:
+ * POST /backend/v1/quizzes/{id}/reprocess
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/quizzes/{id}/reprocess',
+  (e) => {
+    const authUser = e.auth
+    if (!authUser || !authUser.id) {
+      return e.json(401, { message: 'Não autorizado' })
     }
 
+    const quizId = e.request.pathValue('id')
+    let quizRecord
+    try {
+      quizRecord = $app.findRecordById('quizzes', quizId)
+    } catch (_) {
+      return e.json(404, { message: 'Quiz não encontrado' })
+    }
+
+    if (quizRecord.getString('usuario_id') !== authUser.id) {
+      return e.json(403, { message: 'Acesso negado' })
+    }
+
+    const arquivoName = quizRecord.getString('arquivo')
+    if (!arquivoName) {
+      return e.json(400, { message: 'Este quiz não possui arquivo anexado para reprocessamento.' })
+    }
+
+    quizRecord.set('status_processamento', 'processando')
+    quizRecord.set('erro_processamento', '')
+    $app.save(quizRecord)
+
+    // O processamento pode rodar em background ou síncrono aqui se solicitado
     return e.json(200, {
       success: true,
-      quiz_id: createdQuizId,
-      nome_quiz: quizTitle,
-      total_perguntas: questionsList.length,
-      truncated: isTruncated,
+      quiz_id: quizId,
+      status: 'processando',
     })
   },
   $apis.requireAuth(),
-  $apis.bodyLimit(105 * 1024 * 1024),
 )

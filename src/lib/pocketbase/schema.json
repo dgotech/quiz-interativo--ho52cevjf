@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-06T23:20:30.967Z",
+  "generatedAt": "2026-10-06T23:33:34.848Z",
   "collections": [
     {
       "name": "users",
@@ -110,6 +110,31 @@
         {
           "name": "publico_ativo",
           "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "arquivo",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status_processamento",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["pendente", "processando", "concluido", "erro"]
+        },
+        {
+          "name": "erro_processamento",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_perguntas",
+          "type": "number",
           "required": false,
           "system": false
         }

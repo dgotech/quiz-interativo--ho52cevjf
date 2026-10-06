@@ -135,7 +135,6 @@ export default function NewQuiz() {
     setErrorMessage(null)
     setProcessingStep('Enviando e validando seu documento...')
 
-    // Transição suave e informativa de mensagens de processamento conforme o tempo passa
     const isLargeFile = (selectedFile.size || 0) > 10 * 1024 * 1024
     if (isLargeFile) {
       setProcessingStep(
@@ -145,26 +144,17 @@ export default function NewQuiz() {
       )
     }
 
-    const stepTimer1 = setTimeout(() => {
-      setProcessingStep('Upload concluído! Convertendo documento e extraindo tópicos...')
-    }, 6000)
-
-    const stepTimer2 = setTimeout(() => {
-      setProcessingStep('Analisando o conteúdo e formulando perguntas inteligentes...')
-    }, 16000)
-
-    const stepTimer3 = setTimeout(() => {
-      setProcessingStep('Finalizando a estruturação do quiz no banco de dados...')
-    }, 30000)
-
     const abortController = new AbortController()
     abortControllerRef.current = abortController
 
     try {
-      const result = await quizService.gerarQuiz(selectedFile, abortController.signal)
-      clearTimeout(stepTimer1)
-      clearTimeout(stepTimer2)
-      clearTimeout(stepTimer3)
+      const result = await quizService.criarQuizEProcessar(
+        selectedFile,
+        (phaseText) => {
+          setProcessingStep(phaseText)
+        },
+        abortController.signal,
+      )
 
       toast({
         title: '🎉 Quiz gerado com sucesso!',
@@ -175,9 +165,6 @@ export default function NewQuiz() {
 
       navigate(`/quiz/${result.quiz_id}`)
     } catch (err: unknown) {
-      clearTimeout(stepTimer1)
-      clearTimeout(stepTimer2)
-      clearTimeout(stepTimer3)
       setIsProcessing(false)
 
       const errObj = err as { message?: string; code?: string }

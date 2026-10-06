@@ -153,157 +153,190 @@ export const quizService = {
     }
   },
 
-  // Chamar endpoint server-side para gerar quiz a partir do arquivo
-  async gerarQuiz(
+  // Gerar novo token de 32 chars
+  gerarTokenAleatorio(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+    let token = ''
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return token
+  },
+
+  /**
+   * Envia o arquivo diretamente via endpoint nativo de coleções do PocketBase
+   * (POST /api/collections/quizzes/records com multipart), que possui rota de ingestão de arquivos
+   * suportando até 100MB. Em seguida, o hook onRecordAfterCreateSuccess faz a extração com $documents.toMarkdown
+   * e gera as perguntas com Skip AI ($ai.chat).
+   */
+  async criarQuizEProcessar(
     file: File,
+    onProgress?: (phase: string) => void,
     signal?: AbortSignal,
   ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
-    // 1. Snapshot defensivo da autenticação atual
     const initialToken = pb.authStore.token
     const initialModel = pb.authStore.model
 
-    // 2. Validar e tentar renovar sessão ativamente antes de transferir arquivo grande
-    const sessaoStatus = await this.validarSessao()
-    if (!sessaoStatus.valida && sessaoStatus.erro === 'SESSION_EXPIRED') {
+    if (!pb.authStore.isValid || !initialToken) {
       const err = new Error('Sua sessão expirou. Faça login novamente para enviar seu documento.')
       ;(err as { code?: string }).code = 'SESSION_EXPIRED'
       throw err
     }
 
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'pptx'
+    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').trim() || 'Novo Quiz'
+
+    onProgress?.('Enviando arquivo ao servidor...')
+
+    // 1. Criar FormData nativo do PocketBase com o arquivo
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('arquivo', file)
+    formData.append('nome_arquivo', file.name)
+    formData.append('nome_quiz', cleanTitle)
+    formData.append('tipo_arquivo', ext === 'xlsx' ? 'xlsx' : 'pptx')
+    formData.append('usuario_id', pb.authStore.model?.id || '')
+    formData.append('token_publico', this.gerarTokenAleatorio())
+    formData.append('publico_ativo', 'true')
+    formData.append('status_processamento', 'pendente')
 
-    // Pegar o token mais recente (ou o snapshot inicial se estiver intacto)
-    const token = pb.authStore.token || initialToken
-
-    // Configurar timeout generoso (8 minutos) para permitir envio de até 100MB, conversão e chamada de IA
-    const controller = new AbortController()
-    const timeoutMs = 8 * 60 * 1000 // 480 segundos
-    const timeoutId = setTimeout(() => {
-      controller.abort()
-    }, timeoutMs)
-
-    // Se o chamador forneceu um signal de cancelamento, conectar ao nosso controller
-    if (signal) {
-      signal.addEventListener('abort', () => controller.abort(), { once: true })
-    }
-
-    let response: Response
+    let createdRecord: QuizRecord
     try {
-      response = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/quizzes/generate`, {
-        method: 'POST',
-        headers: {
-          Authorization: token ? `Bearer ${token}` : '',
-        },
-        body: formData,
-        signal: controller.signal,
+      createdRecord = await pb.collection('quizzes').create<QuizRecord>(formData, {
+        signal,
+        requestKey: null,
       })
-    } catch (fetchErr: unknown) {
-      clearTimeout(timeoutId)
-
-      // Garantir absolutamente que um erro de rede/timeout NUNCA deslogue o usuário
+    } catch (uploadErr: unknown) {
+      // Proteger sessão do usuário
       if (!pb.authStore.isValid && initialToken) {
         pb.authStore.save(initialToken, initialModel)
       }
 
-      const isAbort =
-        (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') ||
-        (fetchErr as { name?: string })?.name === 'AbortError'
+      const status =
+        (uploadErr as { status?: number })?.status ||
+        (uploadErr as { response?: { status?: number } })?.response?.status
 
-      if (isAbort) {
-        // Se foi o sinal externo cancelado pelo usuário
-        if (signal?.aborted) {
-          const cancelErr = new Error('O envio foi cancelado.')
-          ;(cancelErr as { code?: string }).code = 'ABORTED'
-          throw cancelErr
-        }
-
-        const timeoutErr = new Error(
-          'O processamento do documento demorou mais que o esperado pelo servidor. Tente enviar novamente ou use uma versão com menos slides/tabelas.',
-        )
-        ;(timeoutErr as { code?: string }).code = 'TIMEOUT'
-        throw timeoutErr
-      }
-
-      // Tratar erros genéricos de rede (Failed to fetch, CORS, queda de conexão, upload interrompido)
-      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
-      const networkMessage = isOnline
-        ? 'A comunicação com o servidor de processamento foi interrompida durante o envio. Sua conexão está ativa, mas o servidor demorou a responder ou o envio foi reiniciado. Tente novamente.'
-        : 'Parece que seu dispositivo está desconectado da rede. Verifique sua conexão e tente novamente.'
-
-      const networkErr = new Error(networkMessage)
-      ;(networkErr as { code?: string }).code = 'NETWORK_ERROR'
-      throw networkErr
-    } finally {
-      clearTimeout(timeoutId)
-    }
-
-    if (!response.ok) {
-      let errorMsg = ''
-      try {
-        const errorData = await response.json()
-        if (errorData.message) {
-          errorMsg = errorData.message
-        }
-      } catch {
-        /* intentionally ignored */
-      }
-
-      // Apenas deslogar se o servidor respondeu 401 explícito
-      if (response.status === 401) {
+      if (status === 401 || status === 403) {
         pb.authStore.clear()
-        const authErr = new Error(
-          'Sua sessão expirou. Faça login novamente e tente enviar o arquivo.',
-        )
+        const authErr = new Error('Sua sessão expirou. Faça login novamente.')
         ;(authErr as { code?: string }).code = 'SESSION_EXPIRED'
         throw authErr
       }
 
-      // Para QUALQUER outro status (413, 422, 500, 502, 504), manter a sessão do usuário intacta
-      if (!pb.authStore.isValid && initialToken) {
-        pb.authStore.save(initialToken, initialModel)
-      }
-
-      if (response.status === 413) {
+      if (status === 413) {
         const sizeErr = new Error(
-          errorMsg || 'O arquivo excede o limite suportado pelo servidor de 100MB.',
+          'O arquivo excede o limite máximo permitido de 100MB para armazenamento.',
         )
         ;(sizeErr as { code?: string }).code = 'FILE_TOO_LARGE'
         throw sizeErr
       }
 
-      if (response.status === 422) {
-        const docErr = new Error(
-          errorMsg ||
-            'Não foi possível extrair texto do documento. Certifique-se de que o arquivo contém texto selecionável (não imagens escaneadas sem OCR).',
-        )
-        ;(docErr as { code?: string }).code = 'DOCUMENT_UNREADABLE'
-        throw docErr
+      const isAbort =
+        signal?.aborted ||
+        (uploadErr instanceof DOMException && uploadErr.name === 'AbortError') ||
+        (uploadErr as { name?: string })?.name === 'AbortError'
+
+      if (isAbort) {
+        const cancelErr = new Error('O envio foi cancelado.')
+        ;(cancelErr as { code?: string }).code = 'ABORTED'
+        throw cancelErr
       }
 
-      if (response.status === 504 || response.status === 408) {
-        const gatewayErr = new Error(
-          'O servidor demorou para concluir o processamento da apresentação. O processamento com IA em arquivos grandes pode levar mais tempo. Tente novamente.',
-        )
-        ;(gatewayErr as { code?: string }).code = 'TIMEOUT'
-        throw gatewayErr
-      }
+      const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true
+      const msg = isOnline
+        ? 'A comunicação com o servidor foi interrompida durante o envio do arquivo. Tente novamente.'
+        : 'Dispositivo desconectado da internet. Verifique sua conexão e tente novamente.'
 
-      if (response.status >= 500) {
-        const serverErr = new Error(
-          errorMsg ||
-            'O servidor encontrou um problema ao analisar o documento. Tente novamente em alguns instantes.',
-        )
-        ;(serverErr as { code?: string }).code = 'SERVER_ERROR'
-        throw serverErr
-      }
-
-      throw new Error(
-        errorMsg || 'Falha ao processar o documento. Verifique os dados e tente novamente.',
-      )
+      const netErr = new Error(msg)
+      ;(netErr as { code?: string }).code = 'NETWORK_ERROR'
+      throw netErr
     }
 
-    return response.json()
+    const quizId = createdRecord.id
+
+    // 2. Polling inteligente para acompanhar o status_processamento
+    // O hook onRecordAfterCreateSuccess roda no backend logo após a inserção.
+    onProgress?.('Convertendo documento e gerando perguntas...')
+
+    const maxWaitTimeMs = 5 * 60 * 1000 // até 5 minutos
+    const startTime = Date.now()
+    const pollIntervalMs = 2500
+
+    while (Date.now() - startTime < maxWaitTimeMs) {
+      if (signal?.aborted) {
+        const cancelErr = new Error('Operação cancelada pelo usuário.')
+        ;(cancelErr as { code?: string }).code = 'ABORTED'
+        throw cancelErr
+      }
+
+      await new Promise((r) => setTimeout(r, pollIntervalMs))
+
+      let currentQuiz: QuizRecord
+      try {
+        currentQuiz = await pb.collection('quizzes').getOne<QuizRecord>(quizId, {
+          requestKey: null,
+          signal,
+        })
+      } catch (pollErr: unknown) {
+        // Ignora erros temporários no polling de status
+        console.warn('Oscilação temporária ao consultar status do processamento:', pollErr)
+        continue
+      }
+
+      const status = currentQuiz.status_processamento
+
+      if (status === 'processando') {
+        const elapsed = Math.round((Date.now() - startTime) / 1000)
+        if (elapsed > 18) {
+          onProgress?.('Formulando perguntas pedagógicas com Inteligência Artificial...')
+        } else if (elapsed > 8) {
+          onProgress?.('Extraindo tópicos e tabelas do documento...')
+        }
+      } else if (status === 'concluido') {
+        return {
+          quiz_id: currentQuiz.id,
+          nome_quiz: currentQuiz.nome_quiz,
+          total_perguntas: currentQuiz.total_perguntas || 10,
+          truncated:
+            !!currentQuiz.conteudo_extraido && currentQuiz.conteudo_extraido.length > 30000,
+        }
+      } else if (status === 'erro') {
+        const errorMsg =
+          currentQuiz.erro_processamento ||
+          'Não foi possível concluir a geração do quiz a partir deste documento.'
+        const procErr = new Error(errorMsg)
+        ;(procErr as { code?: string }).code = 'PROCESSING_ERROR'
+        throw procErr
+      }
+    }
+
+    // Se esgotou o tempo de polling
+    const timeoutErr = new Error(
+      'O processamento do documento está demorando mais que o habitual. Você pode conferir o status em "Meus Quizzes" em alguns instantes.',
+    )
+    ;(timeoutErr as { code?: string }).code = 'TIMEOUT'
+    throw timeoutErr
+  },
+
+  // Método legado mantido por compatibilidade caso chamado em outro ponto
+  async gerarQuiz(
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
+    return this.criarQuizEProcessar(file, undefined, signal)
+  },
+
+  // Reprocessar quiz sob demanda
+  async reprocessarQuiz(id: string): Promise<void> {
+    await pb.send(`/backend/v1/quizzes/${id}/reprocess`, {
+      method: 'POST',
+    })
+  },
+
+  // Obter URL do arquivo original armazenado no PocketBase
+  getFileUrl(record: QuizRecord, filename?: string): string {
+    const file = filename || record.arquivo
+    if (!file) return ''
+    return pb.files.getURL(record, file)
   },
 
   // Obter URL do avatar do usuário

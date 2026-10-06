@@ -59,6 +59,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Validar token no boot
     if (pb.authStore.isValid) {
       refreshUser().finally(() => setLoading(false))
+    } else if (pb.authStore.token && pb.authStore.model) {
+      // Se possui dados salvos mas isValid está falso temporariamente
+      setUser(pb.authStore.model as unknown as UserRecord)
+      setLoading(false)
     } else {
       setLoading(false)
     }

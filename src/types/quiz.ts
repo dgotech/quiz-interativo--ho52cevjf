@@ -12,11 +12,17 @@ export type TipoArquivo = 'pptx' | 'xlsx'
 
 import type { RecordModel } from 'pocketbase'
 
+export type StatusProcessamento = 'pendente' | 'processando' | 'concluido' | 'erro'
+
 export interface QuizRecord extends RecordModel {
   tipo_arquivo: TipoArquivo
   nome_arquivo: string
   nome_quiz: string
   conteudo_extraido?: string
+  arquivo?: string
+  status_processamento?: StatusProcessamento
+  erro_processamento?: string
+  total_perguntas?: number
   usuario_id: string
   token_publico?: string
   publico_ativo?: boolean
