@@ -1,19 +1,22 @@
 /**
  * Hook onRecordAfterCreateSuccess('quizzes')
  *
- * Dispara automaticamente após a criação de um registro na coleção 'quizzes'
- * quando um arquivo for anexado via upload nativo do PocketBase (POST /api/collections/quizzes/records).
+ * Dispara automaticamente após a criação de um registro na coleção 'quizzes'.
  *
- * Utiliza $documents.toMarkdown({ record, field: 'arquivo' }) para extração confiável de apresentações
- * (.pptx) ou planilhas (.xlsx), sem sobrecarregar endpoints HTTP síncronos e sem sofrer com
- * limites rígidos de proxy em rotas customizadas.
+ * Suporta dois fluxos:
+ * 1. Upload com arquivo anexado: usa $documents.toMarkdown({ record, field: 'arquivo' }) para arquivos normais.
+ * 2. Upload leve com conteudo_extraido já fornecido (para arquivos grandes >10MB onde o cliente extraiu o texto):
+ *    nesse caso, o conteúdo já está salvo e pulamos o $documents.toMarkdown, indo direto para a Skip AI ($ai.chat).
+ *
+ * Também atualiza status_processamento ('processando' -> 'concluido' ou 'erro') e cria as perguntas na coleção 'perguntas'.
  */
 onRecordAfterCreateSuccess((e) => {
   const quizRecord = e.record
   const arquivoName = quizRecord.getString('arquivo')
+  let existingContent = quizRecord.getString('conteudo_extraido')
 
-  // Se não houver arquivo anexado, não há documento para processar
-  if (!arquivoName) {
+  // Se não houver arquivo nem texto previamente extraído, não há o que processar
+  if (!arquivoName && (!existingContent || existingContent.trim().length === 0)) {
     return e.next()
   }
 
@@ -24,7 +27,7 @@ onRecordAfterCreateSuccess((e) => {
   }
 
   const recordId = quizRecord.id
-  const originalFileName = quizRecord.getString('nome_arquivo') || arquivoName
+  const originalFileName = quizRecord.getString('nome_arquivo') || arquivoName || 'documento'
   const ext = originalFileName.split('.').pop().toLowerCase()
 
   try {
@@ -33,40 +36,45 @@ onRecordAfterCreateSuccess((e) => {
     recordToUpdate.set('status_processamento', 'processando')
     $app.save(recordToUpdate)
 
-    // 2. Extrair Markdown do arquivo armazenado usando $documents.toMarkdown
-    let markdown = ''
+    // 2. Obter Markdown (se já veio no campo conteudo_extraido ou extraindo via $documents.toMarkdown)
+    let markdown = existingContent || ''
     let isTruncated = false
-    try {
-      const docResult = $documents.toMarkdown({
-        record: recordToUpdate,
-        field: 'arquivo',
-      })
-      markdown = docResult.markdown || ''
-      isTruncated = !!docResult.truncated
-    } catch (docErr) {
-      console.log('Erro ao converter documento em Markdown:', docErr)
-      recordToUpdate.set('status_processamento', 'erro')
-      if (docErr && docErr.status === 422) {
-        recordToUpdate.set(
-          'erro_processamento',
-          'Não foi possível extrair texto legível do arquivo enviado. Certifique-se de que a apresentação ou planilha contém texto editável.',
-        )
-      } else if (docErr && docErr.status === 413) {
-        recordToUpdate.set(
-          'erro_processamento',
-          'O volume de texto e dados da apresentação excede o limite máximo de conversão. Tente remover mídias pesadas ou reduzir a quantidade de slides.',
-        )
-      } else {
-        recordToUpdate.set(
-          'erro_processamento',
-          'Falha na extração de texto do documento. O arquivo pode estar corrompido ou protegido por senha.',
-        )
-      }
-      $app.save(recordToUpdate)
-      return e.next()
-    }
 
     if (!markdown || markdown.trim().length < 20) {
+      if (arquivoName) {
+        try {
+          const docResult = $documents.toMarkdown({
+            record: recordToUpdate,
+            field: 'arquivo',
+          })
+          markdown = docResult.markdown || ''
+          isTruncated = !!docResult.truncated
+        } catch (docErr) {
+          console.log('Erro ao converter documento em Markdown via $documents:', docErr)
+          recordToUpdate.set('status_processamento', 'erro')
+          if (docErr && docErr.status === 422) {
+            recordToUpdate.set(
+              'erro_processamento',
+              'Não foi possível extrair texto legível do arquivo enviado. Certifique-se de que a apresentação ou planilha contém texto editável.',
+            )
+          } else if (docErr && docErr.status === 413) {
+            recordToUpdate.set(
+              'erro_processamento',
+              'O volume de texto e dados da apresentação excede o limite máximo de conversão. Tente remover mídias pesadas ou reduzir a quantidade de slides.',
+            )
+          } else {
+            recordToUpdate.set(
+              'erro_processamento',
+              'Falha na extração de texto do documento. O arquivo pode estar corrompido ou protegido por senha.',
+            )
+          }
+          $app.save(recordToUpdate)
+          return e.next()
+        }
+      }
+    }
+
+    if (!markdown || markdown.trim().length < 15) {
       recordToUpdate.set('status_processamento', 'erro')
       recordToUpdate.set(
         'erro_processamento',
@@ -76,8 +84,10 @@ onRecordAfterCreateSuccess((e) => {
       return e.next()
     }
 
-    // Salvar o conteúdo extraído no quiz
-    recordToUpdate.set('conteudo_extraido', markdown)
+    // Salvar o conteúdo extraído no quiz se ainda não estiver salvo
+    if (!existingContent) {
+      recordToUpdate.set('conteudo_extraido', markdown)
+    }
 
     // 3. Gerar perguntas com Skip AI ($ai.chat)
     const systemPrompt =
@@ -256,15 +266,17 @@ routerAdd(
     }
 
     const arquivoName = quizRecord.getString('arquivo')
-    if (!arquivoName) {
-      return e.json(400, { message: 'Este quiz não possui arquivo anexado para reprocessamento.' })
+    const conteudo = quizRecord.getString('conteudo_extraido')
+    if (!arquivoName && !conteudo) {
+      return e.json(400, {
+        message: 'Este quiz não possui arquivo anexado ou conteúdo para reprocessamento.',
+      })
     }
 
     quizRecord.set('status_processamento', 'processando')
     quizRecord.set('erro_processamento', '')
     $app.save(quizRecord)
 
-    // O processamento pode rodar em background ou síncrono aqui se solicitado
     return e.json(200, {
       success: true,
       quiz_id: quizId,

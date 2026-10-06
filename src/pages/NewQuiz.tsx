@@ -138,9 +138,9 @@ export default function NewQuiz() {
     const isLargeFile = (selectedFile.size || 0) > 10 * 1024 * 1024
     if (isLargeFile) {
       setProcessingStep(
-        'Enviando apresentação pesada (~' +
+        'Processando arquivo pesado (~' +
           formatFileSize(selectedFile.size) +
-          ')... A velocidade depende da sua conexão.',
+          ')... Extraindo slides e textos com segurança.',
       )
     }
 

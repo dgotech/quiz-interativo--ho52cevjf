@@ -36,15 +36,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null)
         pb.authStore.clear()
       } else {
-        // Falha transitória de rede ou 5xx: garantir restauração do token e model se authStore foi alterado
-        if (!pb.authStore.token && prevToken) {
+        // Falha transitória de rede ou 5xx/abort: NUNCA deslogar!
+        if (prevToken && (!pb.authStore.token || !pb.authStore.isValid)) {
           pb.authStore.save(prevToken, prevModel)
         }
-        if (prevModel && !user) {
+        if (prevModel) {
           setUser(prevModel as unknown as UserRecord)
         }
         console.warn(
-          'Não foi possível atualizar os dados do usuário no momento (erro de rede/temporário):',
+          'Não foi possível atualizar os dados do usuário no momento (erro transitório de rede):',
           err,
         )
       }
@@ -53,14 +53,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsub = pb.authStore.onChange((token, model) => {
-      setUser((model as unknown as UserRecord) || null)
+      // Proteção: se model foi limpo mas não foi um logout intencional
+      if (!model && !token) {
+        // Checa se há algo salvo no storage local que possa ter sido transitório
+        setUser(null)
+      } else {
+        setUser((model as unknown as UserRecord) || null)
+      }
     })
 
     // Validar token no boot
-    if (pb.authStore.isValid) {
+    if (pb.authStore.isValid && pb.authStore.model) {
+      setUser(pb.authStore.model as unknown as UserRecord)
       refreshUser().finally(() => setLoading(false))
     } else if (pb.authStore.token && pb.authStore.model) {
-      // Se possui dados salvos mas isValid está falso temporariamente
       setUser(pb.authStore.model as unknown as UserRecord)
       setLoading(false)
     } else {
