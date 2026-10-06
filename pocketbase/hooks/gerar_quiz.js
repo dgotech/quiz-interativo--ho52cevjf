@@ -15,6 +15,15 @@ routerAdd(
     }
 
     const uploadedFile = files[0]
+
+    // Limite de tamanho de 100MB no backend
+    const maxSizeBytes = 100 * 1024 * 1024
+    if (uploadedFile.size && uploadedFile.size > maxSizeBytes) {
+      return e.json(413, {
+        message: 'O arquivo enviado excede o limite máximo permitido de 100MB.',
+      })
+    }
+
     const originalName = uploadedFile.originalName || 'documento'
     const ext = originalName.split('.').pop().toLowerCase()
 
@@ -26,15 +35,23 @@ routerAdd(
     }
 
     let markdown = ''
+    let isTruncated = false
     try {
       const docResult = $documents.toMarkdown({ file: uploadedFile })
       markdown = docResult.markdown || ''
+      isTruncated = !!docResult.truncated
     } catch (err) {
       console.log('Erro ao converter documento:', err)
       if (err && err.status === 422) {
         return e.json(422, {
           message:
             'Não foi possível extrair texto do documento enviado. Certifique-se de que o arquivo contém texto legível.',
+        })
+      }
+      if (err && err.status === 413) {
+        return e.json(413, {
+          message:
+            'O conteúdo de texto do documento excede a capacidade de conversão da plataforma. Tente reduzir o número de slides ou imagens embutidas.',
         })
       }
       return e.json(500, { message: 'Erro ao processar o conteúdo do documento. Tente novamente.' })
@@ -55,8 +72,9 @@ routerAdd(
       ext.toUpperCase() +
       ' - ' +
       originalName +
+      (isTruncated ? ' [conteúdo parcial devido ao tamanho do arquivo]' : '') +
       '):\n\n' +
-      markdown.slice(0, 24000) +
+      markdown.slice(0, 32000) +
       '\n\nInstruções detalhadas:\n' +
       '1. Crie um título conciso e atraente para o quiz baseado no tema principal (nome_quiz).\n' +
       "2. Gere 10 perguntas de múltipla escolha (tipo: 'multipla_escolha') com 4 alternativas: A, B, C, D. Cada opção deve ter label ('A', 'B', 'C', 'D') e texto. Especifique 'resposta_correta' ('A', 'B', 'C' ou 'D') e uma 'explicacao' clara do porquê da resposta.\n" +
@@ -188,6 +206,7 @@ routerAdd(
       quiz_id: createdQuizId,
       nome_quiz: quizTitle,
       total_perguntas: questionsList.length,
+      truncated: isTruncated,
     })
   },
   $apis.requireAuth(),

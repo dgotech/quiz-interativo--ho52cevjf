@@ -54,9 +54,9 @@ export default function NewQuiz() {
       return
     }
 
-    const maxSize = 20 * 1024 * 1024 // 20MB
+    const maxSize = 100 * 1024 * 1024 // 100MB
     if (file.size > maxSize) {
-      const err = 'O arquivo excede o limite máximo permitido de 20MB.'
+      const err = 'O arquivo excede o limite máximo permitido de 100MB.'
       setErrorMessage(err)
       toast({
         title: 'Arquivo muito grande',
@@ -116,7 +116,9 @@ export default function NewQuiz() {
 
       toast({
         title: 'Quiz gerado com sucesso!',
-        description: `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}".`,
+        description: result.truncated
+          ? `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}". Nota: o documento era muito extenso, então o quiz foi gerado com base no conteúdo principal.`
+          : `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}".`,
       })
 
       navigate(`/quiz/${result.quiz_id}`)
@@ -226,7 +228,7 @@ export default function NewQuiz() {
                 Excel (.xlsx)
               </span>
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-100 text-[#5A6172] text-xs font-medium">
-                Máx: 20MB
+                Máx: 100MB
               </span>
             </div>
           </div>

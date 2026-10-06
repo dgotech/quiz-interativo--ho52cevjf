@@ -113,7 +113,7 @@ export const quizService = {
   // Chamar endpoint server-side para gerar quiz a partir do arquivo
   async gerarQuiz(
     file: File,
-  ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number }> {
+  ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
     const formData = new FormData()
     formData.append('file', file)
 
