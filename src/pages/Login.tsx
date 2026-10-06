@@ -18,6 +18,7 @@ export default function Login() {
   const { toast } = useToast()
 
   const from = location.state?.from?.pathname || '/'
+  const sessionNotice = location.state?.sessionExpiredMessage || ''
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -72,6 +73,15 @@ export default function Login() {
               Entre com suas credenciais para gerenciar seus quizzes e testes.
             </p>
           </div>
+
+          {sessionNotice && !errorMessage && (
+            <div className="mb-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-sm text-amber-800 flex items-start gap-2 animate-fade-in">
+              <span className="font-semibold text-xs mt-0.5 bg-amber-100 text-amber-900 px-1.5 py-0.5 rounded">
+                Sessão
+              </span>
+              <span>{sessionNotice}</span>
+            </div>
+          )}
 
           {errorMessage && (
             <div className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 flex items-start gap-2 animate-fade-in">

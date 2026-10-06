@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useRef, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { quizService } from '@/services/quizService'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import pb from '@/lib/pocketbase/client'
 import {
   UploadCloud,
   FileText,
@@ -25,8 +26,19 @@ export default function NewQuiz() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
   const navigate = useNavigate()
+  const location = useLocation()
   const { toast } = useToast()
+
+  // Limpar requisição pendente se o componente desmontar
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault()
@@ -102,39 +114,106 @@ export default function NewQuiz() {
   const handleProcessFile = async () => {
     if (!selectedFile) return
 
-    setIsProcessing(true)
-    setProcessingStep('Lendo e interpretando seu arquivo com IA...')
+    // 1. Verificação prévia da sessão local antes de começar
+    if (!pb.authStore.isValid || !pb.authStore.token) {
+      toast({
+        title: 'Sessão expirada',
+        description: 'Sua sessão expirou. Faça login novamente e tente enviar o arquivo.',
+        variant: 'destructive',
+      })
+      navigate('/login', {
+        state: {
+          from: location,
+          sessionExpiredMessage: 'Sua sessão expirou. Faça login novamente para gerar o quiz.',
+        },
+        replace: true,
+      })
+      return
+    }
 
-    // Transição suave de mensagens de processamento
-    const stepTimer = setTimeout(() => {
-      setProcessingStep('Gerando perguntas objetivas e dissertativas com gabarito...')
-    }, 3500)
+    setIsProcessing(true)
+    setErrorMessage(null)
+    setProcessingStep('Enviando e validando seu documento...')
+
+    // Transição suave e informativa de mensagens de processamento conforme o tempo passa
+    const stepTimer1 = setTimeout(() => {
+      setProcessingStep('Lendo slides e tabelas com IA...')
+    }, 2500)
+
+    const stepTimer2 = setTimeout(() => {
+      setProcessingStep('Gerando perguntas objetivas e dissertativas com gabarito pedagógico...')
+    }, 8000)
+
+    const stepTimer3 = setTimeout(() => {
+      setProcessingStep('Finalizando a estruturação do quiz no banco de dados...')
+    }, 20000)
+
+    const abortController = new AbortController()
+    abortControllerRef.current = abortController
 
     try {
-      const result = await quizService.gerarQuiz(selectedFile)
-      clearTimeout(stepTimer)
+      const result = await quizService.gerarQuiz(selectedFile, abortController.signal)
+      clearTimeout(stepTimer1)
+      clearTimeout(stepTimer2)
+      clearTimeout(stepTimer3)
 
       toast({
-        title: 'Quiz gerado com sucesso!',
+        title: '🎉 Quiz gerado com sucesso!',
         description: result.truncated
-          ? `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}". Nota: o documento era muito extenso, então o quiz foi gerado com base no conteúdo principal.`
-          : `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}".`,
+          ? `Criadas ${result.total_perguntas} perguntas para "${result.nome_quiz}". O documento era longo, então priorizamos o conteúdo principal.`
+          : `Criadas ${result.total_perguntas} perguntas incríveis para "${result.nome_quiz}".`,
       })
 
       navigate(`/quiz/${result.quiz_id}`)
     } catch (err: unknown) {
-      clearTimeout(stepTimer)
+      clearTimeout(stepTimer1)
+      clearTimeout(stepTimer2)
+      clearTimeout(stepTimer3)
+      setIsProcessing(false)
+
+      const errObj = err as { message?: string; code?: string }
+      const errCode = errObj?.code
+      const msg = errObj?.message || 'Falha ao processar o arquivo. Tente novamente.'
+
       console.error('Erro ao processar arquivo:', err)
-      const msg =
-        (err as { message?: string })?.message ||
-        'Falha ao processar o arquivo. Certifique-se de que o documento contém texto legível.'
+
+      // Se a sessão expirou durante a tentativa
+      if (errCode === 'SESSION_EXPIRED') {
+        toast({
+          title: 'Sessão expirada',
+          description: 'Sua sessão expirou. Faça login novamente para continuar.',
+          variant: 'destructive',
+        })
+        navigate('/login', {
+          state: {
+            from: location,
+            sessionExpiredMessage: 'Sua sessão expirou. Faça login novamente e envie seu arquivo.',
+          },
+          replace: true,
+        })
+        return
+      }
+
       setErrorMessage(msg)
+
+      let toastTitle = 'Ops! Não foi possível processar'
+      if (errCode === 'NETWORK_ERROR') {
+        toastTitle = 'Falha de conexão'
+      } else if (errCode === 'TIMEOUT') {
+        toastTitle = 'Tempo limite excedido'
+      } else if (errCode === 'FILE_TOO_LARGE') {
+        toastTitle = 'Arquivo muito grande'
+      } else if (errCode === 'DOCUMENT_UNREADABLE') {
+        toastTitle = 'Documento sem texto legível'
+      }
+
       toast({
-        title: 'Erro no processamento',
+        title: toastTitle,
         description: msg,
         variant: 'destructive',
       })
-      setIsProcessing(false)
+    } finally {
+      abortControllerRef.current = null
     }
   }
 

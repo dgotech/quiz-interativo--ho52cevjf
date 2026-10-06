@@ -110,27 +110,86 @@ export const quizService = {
     return pb.collection('quizzes').delete(id)
   },
 
+  // Validar se a sessão atual ainda é válida no backend antes de operações pesadas
+  async validarSessao(): Promise<boolean> {
+    if (!pb.authStore.isValid || !pb.authStore.token) {
+      return false
+    }
+    try {
+      await pb.collection('users').authRefresh()
+      return true
+    } catch {
+      pb.authStore.clear()
+      return false
+    }
+  },
+
   // Chamar endpoint server-side para gerar quiz a partir do arquivo
   async gerarQuiz(
     file: File,
+    signal?: AbortSignal,
   ): Promise<{ quiz_id: string; nome_quiz: string; total_perguntas: number; truncated?: boolean }> {
+    // 1. Validar e tentar renovar sessão ativamente antes de transferir arquivo grande
+    const sessaoValida = await this.validarSessao()
+    if (!sessaoValida) {
+      const err = new Error('Sua sessão expirou. Faça login novamente para enviar seu documento.')
+      ;(err as { code?: string }).code = 'SESSION_EXPIRED'
+      throw err
+    }
+
     const formData = new FormData()
     formData.append('file', file)
 
     const token = pb.authStore.token
-    const response = await fetch(
-      `${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/quizzes/generate`,
-      {
+
+    // Configurar timeout generoso (5 minutos) para permitir envio de até 100MB e IA
+    const controller = new AbortController()
+    const timeoutMs = 5 * 60 * 1000 // 300 segundos
+    const timeoutId = setTimeout(() => {
+      controller.abort()
+    }, timeoutMs)
+
+    // Se o chamador forneceu um signal de cancelamento, conectar ao nosso controller
+    if (signal) {
+      signal.addEventListener('abort', () => controller.abort(), { once: true })
+    }
+
+    let response: Response
+    try {
+      response = await fetch(`${import.meta.env.VITE_POCKETBASE_URL}/backend/v1/quizzes/generate`, {
         method: 'POST',
         headers: {
           Authorization: token ? `Bearer ${token}` : '',
         },
         body: formData,
-      },
-    )
+        signal: controller.signal,
+      })
+    } catch (fetchErr: unknown) {
+      clearTimeout(timeoutId)
+      const isAbort =
+        (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') ||
+        (fetchErr as { name?: string })?.name === 'AbortError'
+
+      if (isAbort) {
+        const timeoutErr = new Error(
+          'O processamento demorou mais que o esperado (tempo limite de 5 minutos excedido). Verifique sua conexão ou tente um arquivo menor.',
+        )
+        ;(timeoutErr as { code?: string }).code = 'TIMEOUT'
+        throw timeoutErr
+      }
+
+      // Tratar erros genéricos de rede (Failed to fetch, CORS, queda de conexão, DNS)
+      const networkErr = new Error(
+        'Não foi possível conectar ao servidor. Verifique sua conexão de internet e tente novamente.',
+      )
+      ;(networkErr as { code?: string }).code = 'NETWORK_ERROR'
+      throw networkErr
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
-      let errorMsg = 'Falha ao processar o documento'
+      let errorMsg = ''
       try {
         const errorData = await response.json()
         if (errorData.message) {
@@ -139,7 +198,45 @@ export const quizService = {
       } catch {
         /* intentionally ignored */
       }
-      throw new Error(errorMsg)
+
+      if (response.status === 401) {
+        pb.authStore.clear()
+        const authErr = new Error(
+          'Sua sessão expirou. Faça login novamente e tente enviar o arquivo.',
+        )
+        ;(authErr as { code?: string }).code = 'SESSION_EXPIRED'
+        throw authErr
+      }
+
+      if (response.status === 413) {
+        const sizeErr = new Error(
+          errorMsg || 'O arquivo excede o limite suportado pelo servidor de 100MB.',
+        )
+        ;(sizeErr as { code?: string }).code = 'FILE_TOO_LARGE'
+        throw sizeErr
+      }
+
+      if (response.status === 422) {
+        const docErr = new Error(
+          errorMsg ||
+            'Não foi possível extrair texto do documento. Certifique-se de que o arquivo contém texto selecionável (não imagens escaneadas sem OCR).',
+        )
+        ;(docErr as { code?: string }).code = 'DOCUMENT_UNREADABLE'
+        throw docErr
+      }
+
+      if (response.status >= 500) {
+        const serverErr = new Error(
+          errorMsg ||
+            'O servidor encontrou um problema ao gerar o quiz. Tente novamente em alguns instantes.',
+        )
+        ;(serverErr as { code?: string }).code = 'SERVER_ERROR'
+        throw serverErr
+      }
+
+      throw new Error(
+        errorMsg || 'Falha ao processar o documento. Verifique os dados e tente novamente.',
+      )
     }
 
     return response.json()
