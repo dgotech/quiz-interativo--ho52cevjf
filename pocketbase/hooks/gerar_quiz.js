@@ -285,3 +285,216 @@ routerAdd(
   },
   $apis.requireAuth(),
 )
+
+/**
+ * Rota para refazer / regenerar perguntas do quiz existente sob demanda:
+ * POST /backend/v1/quizzes/{id}/regenerate
+ *
+ * Utiliza o conteúdo já armazenado (conteudo_extraido ou extraído do arquivo original via $documents)
+ * Formula novas propostas de perguntas com IA ($ai.chat), substitui as perguntas existentes de forma atômica
+ * e preserva o quiz e o histórico de tentativas.
+ */
+routerAdd(
+  'POST',
+  '/backend/v1/quizzes/{id}/regenerate',
+  (e) => {
+    const authUser = e.auth
+    if (!authUser || !authUser.id) {
+      return e.json(401, { message: 'Não autorizado' })
+    }
+
+    const quizId = e.request.pathValue('id')
+    let quizRecord
+    try {
+      quizRecord = $app.findRecordById('quizzes', quizId)
+    } catch (_) {
+      return e.json(404, { message: 'Quiz não encontrado' })
+    }
+
+    if (quizRecord.getString('usuario_id') !== authUser.id) {
+      return e.json(403, {
+        message: 'Acesso negado: apenas o proprietário pode refazer as perguntas.',
+      })
+    }
+
+    let markdown = quizRecord.getString('conteudo_extraido') || ''
+    const arquivoName = quizRecord.getString('arquivo')
+    let isTruncated = false
+
+    if (!markdown || markdown.trim().length < 20) {
+      if (arquivoName) {
+        try {
+          const docResult = $documents.toMarkdown({
+            record: quizRecord,
+            field: 'arquivo',
+          })
+          markdown = docResult.markdown || ''
+          isTruncated = !!docResult.truncated
+          if (markdown && markdown.trim().length >= 15) {
+            quizRecord.set('conteudo_extraido', markdown)
+            $app.save(quizRecord)
+          }
+        } catch (docErr) {
+          console.log('Erro ao converter documento em Markdown na regeneração:', docErr)
+          return e.json(422, {
+            message:
+              'Não foi possível extrair o texto do documento armazenado para formular novas perguntas.',
+          })
+        }
+      }
+    }
+
+    if (!markdown || markdown.trim().length < 15) {
+      return e.json(400, {
+        message: 'O documento armazenado possui texto insuficiente para gerar novas perguntas.',
+      })
+    }
+
+    const originalFileName = quizRecord.getString('nome_arquivo') || arquivoName || 'documento'
+    const ext = originalFileName.split('.').pop().toLowerCase()
+
+    const systemPrompt =
+      'Você é um especialista educacional e criador de quizzes interativos em português (PT-BR). Analise o documento em Markdown fornecido e gere um quiz rico, com propostas e perguntas TOTALMENTE NOVAS E VARIADAS em relação a perguntas óbvias. Você DEVE retornar APENAS um JSON válido e puro sem formatação markdown extra fora do json.'
+
+    const userPrompt =
+      'Abaixo está o conteúdo extraído do documento (' +
+      ext.toUpperCase() +
+      ' - ' +
+      originalFileName +
+      (isTruncated ? ' [conteúdo parcial]' : '') +
+      '):\n\n' +
+      markdown.slice(0, 32000) +
+      '\n\nInstruções detalhadas para esta nova rodada de perguntas:\n' +
+      '1. Formule novas propostas com abordagens diferentes e perguntas inéditas sobre os principais conceitos, procedimentos e dados.\n' +
+      "2. Gere 10 perguntas de múltipla escolha (tipo: 'multipla_escolha') com 4 alternativas: A, B, C, D. Cada opção com label ('A', 'B', 'C', 'D') e texto. Especifique 'resposta_correta' ('A', 'B', 'C' ou 'D') e uma 'explicacao' clara e instrutiva.\n" +
+      "3. Gere 3 perguntas abertas/dissertativas (tipo: 'aberta') reflexivas e analíticas. Para abertas: opcoes = null, resposta_correta = null, e 'explicacao' com tópicos esperados.\n" +
+      '4. Retorne RIGOROSAMENTE a estrutura JSON abaixo:\n' +
+      '{\n' +
+      '  "perguntas": [\n' +
+      '    {\n' +
+      '      "enunciado": "Texto da nova pergunta",\n' +
+      '      "tipo": "multipla_escolha",\n' +
+      '      "opcoes": [\n' +
+      '        {"label": "A", "texto": "Texto alternativa A"},\n' +
+      '        {"label": "B", "texto": "Texto alternativa B"},\n' +
+      '        {"label": "C", "texto": "Texto alternativa C"},\n' +
+      '        {"label": "D", "texto": "Texto alternativa D"}\n' +
+      '      ],\n' +
+      '      "resposta_correta": "A",\n' +
+      '      "explicacao": "Explicação pedagógica da resposta."\n' +
+      '    },\n' +
+      '    {\n' +
+      '      "enunciado": "Texto da pergunta aberta",\n' +
+      '      "tipo": "aberta",\n' +
+      '      "opcoes": null,\n' +
+      '      "resposta_correta": null,\n' +
+      '      "explicacao": "Critérios fundamentais esperados."\n' +
+      '    }\n' +
+      '  ]\n' +
+      '}'
+
+    let aiResponse
+    try {
+      aiResponse = $ai.chat({
+        model: 'fast',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.6,
+      })
+    } catch (aiErr) {
+      console.log('Erro ao chamar Skip AI na regeneração:', aiErr)
+      return e.json(500, {
+        message:
+          'A Inteligência Artificial está temporariamente indisponível. Tente novamente em instantes.',
+      })
+    }
+
+    let generatedContent = ''
+    if (aiResponse && aiResponse.choices && aiResponse.choices.length > 0) {
+      generatedContent = aiResponse.choices[0].message.content || ''
+    }
+
+    let jsonString = generatedContent.trim()
+    if (jsonString.startsWith('```json')) {
+      jsonString = jsonString.slice(7)
+    } else if (jsonString.startsWith('```')) {
+      jsonString = jsonString.slice(3)
+    }
+    if (jsonString.endsWith('```')) {
+      jsonString = jsonString.slice(0, -3)
+    }
+    jsonString = jsonString.trim()
+
+    let quizData = null
+    try {
+      quizData = JSON.parse(jsonString)
+    } catch (parseErr) {
+      console.log('Falha ao parsear JSON na regeneração, buscando objeto {...}:', parseErr)
+      const firstBrace = jsonString.indexOf('{')
+      const lastBrace = jsonString.lastIndexOf('}')
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        try {
+          quizData = JSON.parse(jsonString.substring(firstBrace, lastBrace + 1))
+        } catch (innerErr) {
+          console.log('JSON parse falhou no bloco isolado:', innerErr)
+        }
+      }
+    }
+
+    if (!quizData || !Array.isArray(quizData.perguntas) || quizData.perguntas.length === 0) {
+      return e.json(500, {
+        message:
+          'A Inteligência Artificial não retornou o conjunto de perguntas no formato esperado. Tente novamente.',
+      })
+    }
+
+    const newQuestions = quizData.perguntas
+
+    // Excluir perguntas antigas do quiz
+    try {
+      const existingPerguntas = $app.findRecordsByFilter(
+        'perguntas',
+        'quiz_id = "' + quizId + '"',
+        'ordem',
+        500,
+        0,
+      )
+      for (let i = 0; i < existingPerguntas.length; i++) {
+        $app.delete(existingPerguntas[i])
+      }
+    } catch (delErr) {
+      console.log('Aviso ao limpar perguntas antigas:', delErr)
+    }
+
+    // Inserir as novas perguntas
+    const perguntasCol = $app.findCollectionByNameOrId('perguntas')
+    for (let i = 0; i < newQuestions.length; i++) {
+      const q = newQuestions[i]
+      const pRecord = new Record(perguntasCol)
+      pRecord.set('quiz_id', quizId)
+      pRecord.set('enunciado', q.enunciado || 'Pergunta ' + (i + 1))
+      const qTipo = q.tipo === 'aberta' ? 'aberta' : 'multipla_escolha'
+      pRecord.set('tipo', qTipo)
+      pRecord.set('opcoes', Array.isArray(q.opcoes) ? q.opcoes : null)
+      pRecord.set('resposta_correta', q.resposta_correta || null)
+      pRecord.set('explicacao', q.explicacao || '')
+      pRecord.set('ordem', i + 1)
+      $app.save(pRecord)
+    }
+
+    // Atualizar total de perguntas no quiz e status
+    quizRecord.set('total_perguntas', newQuestions.length)
+    quizRecord.set('status_processamento', 'concluido')
+    quizRecord.set('erro_processamento', '')
+    $app.save(quizRecord)
+
+    return e.json(200, {
+      success: true,
+      message: 'Perguntas regeneradas com sucesso!',
+      total_perguntas: newQuestions.length,
+    })
+  },
+  $apis.requireAuth(),
+)

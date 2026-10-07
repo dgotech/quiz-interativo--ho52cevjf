@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import type { PerguntaRecord, OpcaoQuiz, TipoPergunta } from '@/types/quiz'
+import type {
+  PerguntaRecord,
+  OpcaoQuiz,
+  TipoPergunta,
+  QuizRecord,
+  TentativaRecord,
+} from '@/types/quiz'
 import { quizService } from '@/services/quizService'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,12 +43,19 @@ import {
   HelpCircle,
   FileQuestion,
   Lightbulb,
+  RefreshCw,
+  FileSpreadsheet,
 } from 'lucide-react'
 
 interface QuizQuestionsEditorProps {
   quizId: string
   perguntas: PerguntaRecord[]
   onRefresh: () => Promise<void>
+  quiz?: QuizRecord | null
+  tentativas?: TentativaRecord[]
+  onRegenerateClick?: () => void
+  onExportExcelClick?: () => void
+  isOwner?: boolean
 }
 
 const DEFAULT_OPTIONS: OpcaoQuiz[] = [
@@ -52,7 +65,14 @@ const DEFAULT_OPTIONS: OpcaoQuiz[] = [
   { label: 'D', texto: '' },
 ]
 
-export function QuizQuestionsEditor({ quizId, perguntas, onRefresh }: QuizQuestionsEditorProps) {
+export function QuizQuestionsEditor({
+  quizId,
+  perguntas,
+  onRefresh,
+  onRegenerateClick,
+  onExportExcelClick,
+  isOwner = true,
+}: QuizQuestionsEditorProps) {
   const { toast } = useToast()
 
   // Estado para modal de edição / criação
@@ -274,7 +294,33 @@ export function QuizQuestionsEditor({ quizId, perguntas, onRefresh }: QuizQuesti
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {onExportExcelClick && isOwner && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onExportExcelClick}
+              className="rounded-xl border-emerald-300 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100 font-semibold text-xs h-9 px-3.5"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-600" />
+              Exportar para Excel
+            </Button>
+          )}
+
+          {onRegenerateClick && isOwner && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onRegenerateClick}
+              className="rounded-xl border-[#6C4DF6]/30 bg-purple-50/60 text-[#6C4DF6] hover:bg-[#6C4DF6]/15 font-semibold text-xs h-9 px-3.5"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+              Refazer perguntas com IA
+            </Button>
+          )}
+
           <Button
             onClick={handleOpenCreate}
             size="sm"

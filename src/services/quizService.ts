@@ -434,6 +434,20 @@ export const quizService = {
     })
   },
 
+  // Regenerar / Refazer perguntas do quiz usando o conteúdo do documento já armazenado
+  async regenerarPerguntas(id: string): Promise<{
+    success: boolean
+    message: string
+    total_perguntas?: number
+  }> {
+    return pb.send<{ success: boolean; message: string; total_perguntas?: number }>(
+      `/backend/v1/quizzes/${id}/regenerate`,
+      {
+        method: 'POST',
+      },
+    )
+  },
+
   // Obter URL do arquivo original armazenado no PocketBase
   getFileUrl(record: QuizRecord, filename?: string): string {
     const file = filename || record.arquivo

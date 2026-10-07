@@ -38,11 +38,24 @@ import {
 import { QuizQuestionsEditor } from '@/components/QuizQuestionsEditor'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/contexts/AuthContext'
+import { exportarQuizParaExcel } from '@/lib/quizExcelExport'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 export default function QuizView() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
 
   const [quiz, setQuiz] = useState<QuizRecord | null>(null)
   const [perguntas, setPerguntas] = useState<PerguntaRecord[]>([])
@@ -60,6 +73,13 @@ export default function QuizView() {
   const [copied, setCopied] = useState(false)
   const [togglingShare, setTogglingShare] = useState(false)
   const [regeneratingToken, setRegeneratingToken] = useState(false)
+
+  // Estado de regeneração de perguntas com IA
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false)
+  const [regeneratingQuestions, setRegeneratingQuestions] = useState(false)
+
+  // Estado de exportação Excel
+  const [exportingExcel, setExportingExcel] = useState(false)
 
   // Acordeão de detalhes da tentativa
   const [expandedTentativaId, setExpandedTentativaId] = useState<string | null>(null)
@@ -118,8 +138,61 @@ export default function QuizView() {
   const isPpt = quiz.tipo_arquivo === 'pptx'
   const hasCompleted = tentativas.length > 0
   const bestScore = hasCompleted ? Math.max(...tentativas.map((t) => t.pontuacao || 0)) : 0
+  const isOwner = !!user && user.id === quiz.usuario_id
 
   const shareUrl = quiz.token_publico ? `${window.location.origin}/p/${quiz.token_publico}` : ''
+
+  // Ação de exportar perguntas e tentativas para Excel
+  const handleExportExcel = () => {
+    if (!quiz) return
+    setExportingExcel(true)
+    try {
+      const result = exportarQuizParaExcel(quiz, perguntas, tentativas)
+      toast({
+        title: 'Planilha gerada com sucesso!',
+        description: `O arquivo ${result.fileName} foi baixado com perguntas, gabarito e histórico.`,
+      })
+    } catch (err) {
+      console.error('Erro na exportação para Excel:', err)
+      toast({
+        title: 'Erro ao gerar planilha',
+        description: 'Não foi possível exportar os dados para Excel no momento.',
+        variant: 'destructive',
+      })
+    } finally {
+      setExportingExcel(false)
+    }
+  }
+
+  // Ação de confirmar e disparar a regeneração de perguntas com IA
+  const handleConfirmRegenerate = async () => {
+    if (!quiz) return
+    setRegeneratingQuestions(true)
+    try {
+      const res = await quizService.regenerarPerguntas(quiz.id)
+      setConfirmRegenerateOpen(false)
+      toast({
+        title: 'Novas perguntas geradas!',
+        description: res.message || 'O conjunto de perguntas foi atualizado com sucesso pela IA.',
+      })
+      await loadData()
+      // Leva o usuário para a aba de revisão para ver o novo conjunto imediatamente
+      setActiveTab('questions')
+    } catch (err: unknown) {
+      console.error('Erro ao refazer perguntas:', err)
+      const message =
+        (err as { response?: { message?: string } })?.response?.message ||
+        (err as { message?: string })?.message ||
+        'Não foi possível formular novas perguntas com a IA. Tente novamente em instantes.'
+      toast({
+        title: 'Falha ao refazer perguntas',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setRegeneratingQuestions(false)
+    }
+  }
 
   const handleCopyLink = async () => {
     if (!shareUrl) return
@@ -288,7 +361,7 @@ export default function QuizView() {
         </div>
 
         {/* Botões Primários */}
-        <div className="shrink-0 flex sm:flex-col items-stretch sm:items-end gap-2.5">
+        <div className="shrink-0 flex flex-col items-stretch sm:items-end gap-2.5">
           <Button
             onClick={() => navigate(`/quiz/${quiz.id}/play`)}
             size="lg"
@@ -298,15 +371,47 @@ export default function QuizView() {
             {hasCompleted ? 'Responder novamente' : 'Responder quiz'}
           </Button>
 
-          <Button
-            onClick={() => setActiveTab(activeTab === 'questions' ? 'overview' : 'questions')}
-            variant="outline"
-            size="sm"
-            className="rounded-xl border-[#E5E8F0] font-semibold text-xs h-9"
-          >
-            <Edit3 className="w-4 h-4 mr-1.5 text-[#6C4DF6]" />
-            {activeTab === 'questions' ? 'Ver estatísticas' : 'Revisar & editar perguntas'}
-          </Button>
+          <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+            {isOwner && (
+              <>
+                <Button
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel}
+                  variant="outline"
+                  size="sm"
+                  title="Exportar perguntas, alternativas e tentativas para planilha Excel"
+                  className="rounded-xl border-emerald-200 bg-emerald-50/60 text-emerald-800 hover:bg-emerald-100 font-semibold text-xs h-9 px-3"
+                >
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-600" />
+                  {exportingExcel ? 'Exportando...' : 'Exportar Excel'}
+                </Button>
+
+                <Button
+                  onClick={() => setConfirmRegenerateOpen(true)}
+                  disabled={regeneratingQuestions}
+                  variant="outline"
+                  size="sm"
+                  title="Formular novas perguntas inéditas com Inteligência Artificial a partir do documento já salvo"
+                  className="rounded-xl border-[#6C4DF6]/30 bg-purple-50/50 text-[#6C4DF6] hover:bg-[#6C4DF6]/15 font-semibold text-xs h-9 px-3"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 mr-1.5 ${regeneratingQuestions ? 'animate-spin' : ''}`}
+                  />
+                  Refazer perguntas
+                </Button>
+              </>
+            )}
+
+            <Button
+              onClick={() => setActiveTab(activeTab === 'questions' ? 'overview' : 'questions')}
+              variant="outline"
+              size="sm"
+              className="rounded-xl border-[#E5E8F0] font-semibold text-xs h-9 px-3"
+            >
+              <Edit3 className="w-4 h-4 mr-1.5 text-[#6C4DF6]" />
+              {activeTab === 'questions' ? 'Ver visão geral' : 'Revisar & editar'}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -423,7 +528,16 @@ export default function QuizView() {
 
       {/* RENDERIZAÇÃO CONDICIONAL BASEADA NA ABA ATIVA */}
       {activeTab === 'questions' ? (
-        <QuizQuestionsEditor quizId={quiz.id} perguntas={perguntas} onRefresh={loadData} />
+        <QuizQuestionsEditor
+          quizId={quiz.id}
+          perguntas={perguntas}
+          onRefresh={loadData}
+          quiz={quiz}
+          tentativas={tentativas}
+          onRegenerateClick={() => setConfirmRegenerateOpen(true)}
+          onExportExcelClick={handleExportExcel}
+          isOwner={isOwner}
+        />
       ) : (
         <>
           {/* Seção Material de Estudo */}
@@ -659,6 +773,61 @@ export default function QuizView() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Confirmação para Refazer Perguntas com IA */}
+      <AlertDialog open={confirmRegenerateOpen} onOpenChange={setConfirmRegenerateOpen}>
+        <AlertDialogContent className="rounded-3xl max-w-lg p-6 sm:p-7">
+          <AlertDialogHeader>
+            <div className="w-12 h-12 rounded-2xl bg-purple-100 text-[#6C4DF6] flex items-center justify-center mb-1">
+              <RefreshCw className="w-6 h-6" />
+            </div>
+            <AlertDialogTitle className="text-xl font-extrabold text-[#1A1D2E]">
+              Refazer perguntas com IA?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-xs text-[#5A6172] space-y-2 pt-1">
+              <p>
+                A Inteligência Artificial irá analisar o documento já salvo (
+                <strong className="text-[#1A1D2E]">{quiz.nome_arquivo}</strong>) e gerar um conjunto
+                completamente novo e variado de perguntas (10 de múltipla escolha e 3
+                dissertativas).
+              </p>
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs">
+                ⚠️ <strong>Atenção:</strong> As <strong>{perguntas.length} perguntas atuais</strong>{' '}
+                serão substituídas pelas novas propostas. O nome do quiz e o total de tentativas
+                anteriores são preservados.
+              </div>
+              <p className="text-[11px] text-[#5A6172]">
+                Não é necessário enviar o arquivo novamente. Deseja continuar?
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-3 gap-2">
+            <AlertDialogCancel disabled={regeneratingQuestions} className="rounded-xl text-xs h-10">
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault()
+                handleConfirmRegenerate()
+              }}
+              disabled={regeneratingQuestions}
+              className="rounded-xl text-xs font-bold bg-[#6C4DF6] hover:bg-[#5939e6] text-white h-10 px-5 flex items-center gap-1.5"
+            >
+              {regeneratingQuestions ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-1.5" />
+                  Formulando novas perguntas com IA...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-1" />
+                  Sim, gerar novas perguntas
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
