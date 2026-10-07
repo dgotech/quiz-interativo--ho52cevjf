@@ -223,7 +223,7 @@ export default function NewQuiz() {
           </div>
 
           <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-2">
-            QuizDoc AI está trabalhando
+            Quiz - Zara 2026 está trabalhando
           </h2>
 
           <p className="text-slate-300 text-sm sm:text-base max-w-md animate-pulse">

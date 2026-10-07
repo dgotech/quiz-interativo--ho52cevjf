@@ -45,7 +45,7 @@ export default function Layout() {
             <Zap className="w-4 h-4 text-white" />
           </div>
           <span className="font-bold text-base tracking-tight">
-            QuizDoc <span className="text-[#00C4A7]">AI</span>
+            Quiz - <span className="text-[#00C4A7]">Zara 2026</span>
           </span>
         </div>
 
@@ -75,7 +75,7 @@ export default function Layout() {
                   <Zap className="w-4 h-4 text-white" />
                 </div>
                 <span className="font-bold text-base tracking-tight">
-                  QuizDoc <span className="text-[#00C4A7]">AI</span>
+                  Quiz - <span className="text-[#00C4A7]">Zara 2026</span>
                 </span>
               </div>
               <button
@@ -158,7 +158,7 @@ export default function Layout() {
           </div>
           <div>
             <span className="font-extrabold text-lg tracking-tight block">
-              QuizDoc <span className="text-[#00C4A7]">AI</span>
+              Quiz - <span className="text-[#00C4A7]">Zara 2026</span>
             </span>
             <span className="text-[10px] uppercase font-semibold text-slate-400 tracking-wider">
               Estudo Inteligente

@@ -75,7 +75,7 @@ export default function VerifyEmail() {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <span className="text-xl font-bold tracking-tight text-[#1A1D2E]">
-            QuizDoc <span className="text-[#6C4DF6]">AI</span>
+            Quiz - <span className="text-[#6C4DF6]">Zara 2026</span>
           </span>
         </div>
 

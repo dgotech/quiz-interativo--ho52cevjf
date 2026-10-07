@@ -254,7 +254,7 @@ export default function PublicQuizPlay() {
                 variant="outline"
                 className="rounded-xl border-white/20 text-white hover:bg-white/10 text-xs"
               >
-                Ir para a página inicial do QuizDoc AI
+                Ir para a página inicial do Quiz - Zara 2026
               </Button>
             </Link>
           </div>
@@ -277,7 +277,7 @@ export default function PublicQuizPlay() {
               <Share2 className="w-4 h-4 text-white" />
             </div>
             <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-              QuizDoc AI • Convite Aberto
+              Quiz - Zara 2026 • Convite Aberto
             </span>
           </div>
 
@@ -692,7 +692,7 @@ export default function PublicQuizPlay() {
           <Sparkles className="w-3.5 h-3.5 text-[#00C4A7]" />
           <span>Gostou? Crie seus próprios quizzes com IA no</span>
           <Link to="/signup" className="text-white underline hover:text-[#00C4A7] font-semibold">
-            QuizDoc AI
+            Quiz - Zara 2026
           </Link>
         </div>
 
