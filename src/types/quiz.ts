@@ -67,3 +67,60 @@ export interface TentativaRecord extends RecordModel {
     usuario_id?: UserRecord
   }
 }
+
+// ============================================
+// Tipos para Modo Competição (Estilo Mentimeter)
+// ============================================
+
+export type StatusCompeticao = 'aguardando' | 'em_andamento' | 'encerrada'
+
+export interface CompeticaoRecord extends RecordModel {
+  quiz: string
+  codigo: string
+  titulo?: string
+  status: StatusCompeticao
+  ativa?: boolean
+  criado_por?: string
+  expand?: {
+    quiz?: QuizRecord
+    criado_por?: UserRecord
+  }
+}
+
+export interface GrupoRecord extends RecordModel {
+  competicao: string
+  nome: string
+  cor: string // Ex: hex #6C4DF6 ou classe de cor
+  ordem?: number
+}
+
+export interface ParticipacaoRecord extends RecordModel {
+  competicao: string
+  grupo: string
+  apelido: string
+  pontuacao: number // pontuação acumulada do jogador
+  acertos: number
+  total_perguntas: number
+  tempo_segundos?: number
+  finalizada?: boolean
+  respostas_detalhe?: RespostaItem[]
+  expand?: {
+    grupo?: GrupoRecord
+    competicao?: CompeticaoRecord
+  }
+}
+
+export interface RankingGrupo {
+  grupo: GrupoRecord
+  pontosTotais: number
+  totalParticipantes: number
+  totalAcertos: number
+  totalPerguntasRespondidas: number
+  mediaAcertosPercentual: number
+  melhorJogador?: {
+    apelido: string
+    pontuacao: number
+    acertos: number
+  }
+  participantes: ParticipacaoRecord[]
+}

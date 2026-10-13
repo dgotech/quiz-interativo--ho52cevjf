@@ -22,6 +22,8 @@ import NewQuiz from './pages/NewQuiz'
 import QuizView from './pages/QuizView'
 import QuizPlay from './pages/QuizPlay'
 import PublicQuizPlay from './pages/PublicQuizPlay'
+import CompeticaoHost from './pages/CompeticaoHost'
+import CompeticaoPlayer from './pages/CompeticaoPlayer'
 import Profile from './pages/Profile'
 import NotFound from './pages/NotFound'
 
@@ -56,6 +58,19 @@ const App = () => (
 
           {/* Rota Pública do Quiz Compartilhável por Link (Sem necessidade de login) */}
           <Route path="/p/:token" element={<PublicQuizPlay />} />
+
+          {/* Rota Pública do Jogador no Modo Competição (estilo Mentimeter) */}
+          <Route path="/competir/:codigo" element={<CompeticaoPlayer />} />
+
+          {/* Rota do Host / Projetor do Modo Competição */}
+          <Route
+            path="/competicao/:id/host"
+            element={
+              <ProtectedRoute>
+                <CompeticaoHost />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Rota Especial do Jogo (Ocupa toda a tela, sem sidebar) */}
           <Route

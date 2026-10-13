@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-07T01:38:08.168Z",
+  "generatedAt": "2026-10-13T16:58:38.052Z",
   "collections": [
     {
       "name": "users",
@@ -276,6 +276,216 @@
       ],
       "indexes": [
         "CREATE INDEX idx_tentativas_quiz_usuario ON tentativas (quiz_id, usuario_id, created DESC)"
+      ]
+    },
+    {
+      "name": "competicoes",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "(@request.auth.id != '' && criado_por = @request.auth.id) || (@request.auth.id != '' && quiz.usuario_id = @request.auth.id)",
+        "delete": "(@request.auth.id != '' && criado_por = @request.auth.id) || (@request.auth.id != '' && quiz.usuario_id = @request.auth.id)"
+      },
+      "fields": [
+        {
+          "name": "quiz",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "quizzes"
+        },
+        {
+          "name": "codigo",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "titulo",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["aguardando", "em_andamento", "encerrada"]
+        },
+        {
+          "name": "ativa",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "criado_por",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX idx_competicoes_codigo ON competicoes (codigo)",
+        "CREATE INDEX idx_competicoes_quiz ON competicoes (quiz, created DESC)"
+      ]
+    },
+    {
+      "name": "grupos",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "@request.auth.id != ''",
+        "update": "@request.auth.id != ''",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "competicao",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "competicoes"
+        },
+        {
+          "name": "nome",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "cor",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "ordem",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_grupos_competicao ON grupos (competicao, ordem ASC)"]
+    },
+    {
+      "name": "participacoes",
+      "type": "base",
+      "apiRules": {
+        "list": "",
+        "view": "",
+        "create": "",
+        "update": "",
+        "delete": "@request.auth.id != ''"
+      },
+      "fields": [
+        {
+          "name": "competicao",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "competicoes"
+        },
+        {
+          "name": "grupo",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "grupos"
+        },
+        {
+          "name": "apelido",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "pontuacao",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "acertos",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "total_perguntas",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tempo_segundos",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "finalizada",
+          "type": "bool",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "respostas_detalhe",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE INDEX idx_participacoes_comp ON participacoes (competicao, pontuacao DESC)",
+        "CREATE INDEX idx_participacoes_grupo ON participacoes (grupo)"
       ]
     }
   ]

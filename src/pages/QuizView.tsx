@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { quizService } from '@/services/quizService'
-import type { QuizRecord, PerguntaRecord, TentativaRecord } from '@/types/quiz'
+import { competicaoService } from '@/services/competicaoService'
+import type { QuizRecord, PerguntaRecord, TentativaRecord, CompeticaoRecord } from '@/types/quiz'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -35,6 +36,7 @@ import {
   User,
   RefreshCw,
   Eye,
+  Trash2,
 } from 'lucide-react'
 import { QuizQuestionsEditor } from '@/components/QuizQuestionsEditor'
 import { RelatorioIndividual } from '@/components/RelatorioIndividual'
@@ -65,8 +67,12 @@ export default function QuizView() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Aba ativa: 'overview' | 'questions'
-  const [activeTab, setActiveTab] = useState<'overview' | 'questions'>('overview')
+  // Aba ativa: 'overview' | 'questions' | 'competicao'
+  const [activeTab, setActiveTab] = useState<'overview' | 'questions' | 'competicao'>('overview')
+
+  // Lista de competições deste quiz
+  const [competicoes, setCompeticoes] = useState<CompeticaoRecord[]>([])
+  const [criandoCompeticao, setCriandoCompeticao] = useState(false)
 
   // Modal para ver conteúdo original extraído
   const [showOriginalModal, setShowOriginalModal] = useState(false)
@@ -93,14 +99,16 @@ export default function QuizView() {
   const loadData = useCallback(async () => {
     if (!id) return
     try {
-      const [quizData, pergsData, tentsData] = await Promise.all([
+      const [quizData, pergsData, tentsData, compsData] = await Promise.all([
         quizService.getQuiz(id),
         quizService.getPerguntas(id),
         quizService.getTentativasDoQuiz(id),
+        competicaoService.getCompeticoesDoQuiz(id),
       ])
       setQuiz(quizData)
       setPerguntas(pergsData)
       setTentativas(tentsData)
+      setCompeticoes(compsData)
     } catch (err: unknown) {
       console.error('Erro ao carregar quiz:', err)
       setError('Quiz não encontrado ou você não possui permissão para visualizá-lo.')
@@ -266,6 +274,47 @@ export default function QuizView() {
     }
   }
 
+  // Ação: Criar Nova Competição (Modo Mentimeter)
+  const handleCriarCompeticao = async () => {
+    if (!quiz) return
+    setCriandoCompeticao(true)
+    try {
+      const { competicao: novaComp } = await competicaoService.criarCompeticao(quiz, [
+        'Equipe Alfa',
+        'Equipe Beta',
+        'Equipe Gama',
+      ])
+      toast({
+        title: '🎉 Competição criada com sucesso!',
+        description: `Código da sala: ${novaComp.codigo}. Abrindo tela do Host/Projetor...`,
+      })
+      navigate(`/competicao/${novaComp.id}/host`)
+    } catch (err) {
+      console.error('Erro ao criar competição:', err)
+      toast({
+        title: 'Erro ao criar competição',
+        description: 'Não foi possível gerar a competição no momento.',
+        variant: 'destructive',
+      })
+    } finally {
+      setCriandoCompeticao(false)
+    }
+  }
+
+  // Excluir competição
+  const handleExcluirCompeticao = async (compId: string) => {
+    if (!confirm('Excluir esta competição e seus grupos?')) return
+    try {
+      await competicaoService.excluirCompeticao(compId)
+      setCompeticoes((prev) => prev.filter((c) => c.id !== compId))
+      toast({
+        title: 'Competição excluída',
+      })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   const formatarData = (dataStr: string) => {
     try {
       const d = new Date(dataStr)
@@ -298,24 +347,43 @@ export default function QuizView() {
           <button
             type="button"
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
               activeTab === 'overview'
                 ? 'bg-white text-[#1A1D2E] shadow-sm'
                 : 'text-[#5A6172] hover:text-[#1A1D2E]'
             }`}
           >
-            Visão Geral & Tentativas
+            Visão Geral
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('competicao')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+              activeTab === 'competicao'
+                ? 'bg-gradient-to-r from-[#6C4DF6] to-[#00C4A7] text-white shadow-sm'
+                : 'text-[#5A6172] hover:text-[#1A1D2E]'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Modo Competição</span>
+            {competicoes.length > 0 && (
+              <span
+                className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${activeTab === 'competicao' ? 'bg-white/20 text-white' : 'bg-[#6C4DF6]/10 text-[#6C4DF6]'}`}
+              >
+                {competicoes.length}
+              </span>
+            )}
           </button>
           <button
             type="button"
             onClick={() => setActiveTab('questions')}
-            className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
               activeTab === 'questions'
                 ? 'bg-white text-[#6C4DF6] shadow-sm'
                 : 'text-[#5A6172] hover:text-[#1A1D2E]'
             }`}
           >
-            <span>Revisar & Editar Perguntas</span>
+            <span>Perguntas</span>
             <span className="w-5 h-5 rounded-full bg-[#6C4DF6]/10 text-[#6C4DF6] text-[10px] flex items-center justify-center font-bold">
               {perguntas.length}
             </span>
@@ -380,6 +448,21 @@ export default function QuizView() {
           <div className="flex items-center gap-2 flex-wrap sm:justify-end">
             {isOwner && (
               <>
+                <Button
+                  onClick={handleCriarCompeticao}
+                  disabled={criandoCompeticao}
+                  size="sm"
+                  title="Abrir sala de competição ao vivo entre grupos estilo Mentimeter"
+                  className="rounded-xl font-bold text-xs h-9 px-3.5 bg-gradient-to-r from-[#6C4DF6] to-[#00C4A7] text-white hover:opacity-90 shadow-sm shadow-[#6C4DF6]/20"
+                >
+                  {criandoCompeticao ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Users className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  Competição Ao Vivo
+                </Button>
+
                 <Button
                   onClick={handleExportExcel}
                   disabled={exportingExcel}
@@ -544,6 +627,157 @@ export default function QuizView() {
           onExportExcelClick={handleExportExcel}
           isOwner={isOwner}
         />
+      ) : activeTab === 'competicao' ? (
+        <div className="space-y-6">
+          {/* Card Hero do Modo Competição */}
+          <div className="bg-gradient-to-br from-[#1A1D2E] via-[#2D1B69] to-[#0D3835] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-80 h-80 bg-[#6C4DF6]/20 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-3 max-w-xl">
+                <span className="text-xs uppercase font-extrabold tracking-wider bg-[#00C4A7]/20 text-[#00C4A7] px-3 py-1 rounded-full border border-[#00C4A7]/30 inline-block">
+                  Estilo Mentimeter / Kahoot
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-black tracking-tight">
+                  Dispute quem fez mais pontos em Equipes!
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                  Crie uma sala com código curto, projete na tela grande e deixe os participantes
+                  entrarem pelo celular escolhendo suas equipes. O placar atualiza ao vivo e calcula
+                  a soma de pontos de cada grupo com pódio dos campeões!
+                </p>
+              </div>
+
+              <div className="shrink-0 flex flex-col items-stretch gap-2.5">
+                <Button
+                  onClick={handleCriarCompeticao}
+                  disabled={criandoCompeticao}
+                  size="lg"
+                  className="h-14 px-8 rounded-2xl font-black text-sm bg-gradient-to-r from-[#6C4DF6] via-[#8E6FFF] to-[#00C4A7] text-white hover:opacity-95 shadow-xl shadow-[#6C4DF6]/30 transition-all transform hover:scale-105"
+                >
+                  {criandoCompeticao ? (
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                  ) : (
+                    <Users className="w-5 h-5 mr-2" />
+                  )}
+                  Criar Nova Competição
+                </Button>
+                <p className="text-[11px] text-slate-400 text-center">
+                  Gera código e abre a tela do host
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Lista de Competições deste Quiz */}
+          <div className="bg-white rounded-3xl border border-[#E5E8F0] p-6 sm:p-8 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-base text-[#1A1D2E]">
+                  Salas de Competição deste Quiz ({competicoes.length})
+                </h3>
+                <p className="text-xs text-[#5A6172]">
+                  Histórico de rodadas e salas já criadas. Você pode reabrir qualquer sala como
+                  projetor.
+                </p>
+              </div>
+
+              <Button
+                onClick={handleCriarCompeticao}
+                disabled={criandoCompeticao}
+                size="sm"
+                className="rounded-xl bg-[#6C4DF6] text-white hover:bg-[#5939e6] font-bold text-xs h-9 px-4"
+              >
+                Nova Sala
+              </Button>
+            </div>
+
+            {competicoes.length === 0 ? (
+              <div className="py-12 text-center rounded-2xl bg-[#F7F8FC] border border-dashed border-[#D1D5DB] space-y-2">
+                <Users className="w-10 h-10 text-slate-400 mx-auto opacity-50" />
+                <p className="text-sm font-semibold text-[#1A1D2E]">
+                  Nenhuma competição criada para este quiz
+                </p>
+                <p className="text-xs text-[#5A6172] max-w-sm mx-auto">
+                  Clique no botão &quot;Criar Nova Competição&quot; para abrir a sala no projetor e
+                  exibir o código aos participantes.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {competicoes.map((comp) => (
+                  <div
+                    key={comp.id}
+                    className="p-4 sm:p-5 rounded-2xl border border-[#E5E8F0] bg-[#FDFDFF] flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:border-[#6C4DF6]/40"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-sm font-black text-[#6C4DF6] bg-purple-50 px-2.5 py-0.5 rounded-lg border border-purple-200">
+                          {comp.codigo}
+                        </span>
+                        <h4 className="font-bold text-sm text-[#1A1D2E]">
+                          {comp.titulo || `Competição ${comp.codigo}`}
+                        </h4>
+                        {comp.status === 'em_andamento' && (
+                          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                            Ao Vivo
+                          </Badge>
+                        )}
+                        {comp.status === 'aguardando' && (
+                          <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
+                            Aguardando
+                          </Badge>
+                        )}
+                        {comp.status === 'encerrada' && (
+                          <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] font-bold">
+                            Encerrada
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#5A6172]">
+                        Criada em {formatarData(comp.created)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        onClick={() => navigate(`/competicao/${comp.id}/host`)}
+                        className="rounded-xl h-9 px-4 font-bold text-xs bg-[#6C4DF6] text-white hover:bg-[#5939e6]"
+                      >
+                        Abrir Projetor / Host
+                      </Button>
+
+                      <a
+                        href={`/competir/${comp.codigo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="rounded-xl h-9 px-3 text-xs font-semibold border-[#E5E8F0]"
+                          title="Entrar como participante"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-[#5A6172]" />
+                        </Button>
+                      </a>
+
+                      <Button
+                        onClick={() => handleExcluirCompeticao(comp.id)}
+                        variant="ghost"
+                        size="sm"
+                        className="rounded-xl h-9 px-2 text-rose-500 hover:bg-rose-50"
+                        title="Excluir competição"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <>
           {/* Seção Material de Estudo */}
